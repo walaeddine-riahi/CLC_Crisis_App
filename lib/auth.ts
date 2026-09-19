@@ -6,7 +6,8 @@ import { getDb } from "@/lib/mongodb";
 import type { Role } from "@/lib/roles";
 
 const scrypt = promisify(scryptCallback);
-const COOKIE_NAME = "clc_session";
+const COOKIE_NAME = "clc_session_v2";
+const LEGACY_COOKIE_NAME = "clc_session";
 const SESSION_DAYS = 7;
 
 export type AppUser = {
@@ -43,7 +44,8 @@ export async function createSession(userId: ObjectId) {
   await db.collection("sessions").createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
   await db.collection("sessions").insertOne({ tokenHash: tokenHash(token), userId, createdAt: new Date(), expiresAt });
   const jar = await cookies();
-  jar.set(COOKIE_NAME, token, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", path: "/", expires: expiresAt });
+  jar.set(COOKIE_NAME, token, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", path: "/" });
+  jar.delete(LEGACY_COOKIE_NAME);
 }
 
 export async function destroySession() {
@@ -54,6 +56,7 @@ export async function destroySession() {
     await db.collection("sessions").deleteOne({ tokenHash: tokenHash(token) });
   }
   jar.delete(COOKIE_NAME);
+  jar.delete(LEGACY_COOKIE_NAME);
 }
 
 export async function getCurrentUser(): Promise<AppUser | null> {
