@@ -2,7 +2,7 @@
   'use strict';
   const $ = (id) => document.getElementById(id);
   const els = {
-    overlay: $('collabLoginOverlay'), form: $('collabLoginForm'), email: $('collabEmail'), password: $('collabPassword'), error: $('collabLoginError'),
+    overlay: $('collabLoginOverlay'), form: $('collabLoginForm'), sessionCheck: $('collabSessionCheck'), email: $('collabEmail'), password: $('collabPassword'), error: $('collabLoginError'),
     fab: $('collabFab'), dot: $('collabDot'), fabText: $('collabFabText'), panel: $('collabPanel'), status: $('collabStatusText'),
     user: $('collabUserName'), role: $('collabRole'), entity: $('collabEntity'), workspace: $('collabWorkspace'), last: $('collabLastSync'), users: $('collabUsers'),
     sync: $('collabSyncNow'), manageUsers: $('collabManageUsers'), signout: $('collabSignOut'), banner: $('collabBanner')
@@ -91,6 +91,7 @@
   function flash(text, ms = 2400) { els.banner.textContent = text; els.banner.classList.add('show'); clearTimeout(flash._t); flash._t = setTimeout(() => els.banner.classList.remove('show'), ms); }
   function showError(message) { els.error.textContent = message; els.error.classList.add('show'); }
   function hideError() { els.error.classList.remove('show'); }
+  function showLoginForm() { els.sessionCheck.hidden = true; els.form.hidden = false; els.overlay.classList.remove('hidden'); }
   function updateIdentity() {
     els.user.textContent = profile?.displayName || profile?.email || '—'; els.role.textContent = ROLE_LABELS[profile?.role] || profile?.role || '—';
     els.entity.textContent = profile?.entity || 'Groupe'; els.workspace.textContent = workspace?.name || '—';
@@ -177,11 +178,11 @@
     await heartbeat(); scheduleSync();
   }
   async function stop() {
-    ready = false; app.setPersistHook(null); clearInterval(pollTimer); clearInterval(presenceTimer); els.overlay.classList.remove('hidden'); setStatus('offline', 'Déconnecté.');
+    ready = false; app.setPersistHook(null); clearInterval(pollTimer); clearInterval(presenceTimer); showLoginForm(); setStatus('offline', 'Déconnecté.');
   }
   async function restoreSession() {
     const session = await api('/api/login');
-    if (session.authenticated) await start(); else els.overlay.classList.remove('hidden');
+    if (session.authenticated) await start(); else showLoginForm();
   }
 
   async function createUser() {
@@ -197,7 +198,7 @@
   }
 
   async function init() {
-    if (!app) { showError('Le cockpit décisionnel n’est pas initialisé. Actualisez la page.'); setStatus('offline', 'Initialisation incomplète.'); return; }
+    if (!app) { showLoginForm(); showError('Le cockpit décisionnel n’est pas initialisé. Actualisez la page.'); setStatus('offline', 'Initialisation incomplète.'); return; }
     els.form.addEventListener('submit', async (event) => {
       event.preventDefault(); hideError(); setStatus('syncing', 'Authentification…');
       try {
@@ -210,7 +211,7 @@
     els.sync.onclick = () => syncChangedSections(true); els.manageUsers.onclick = createUser; els.fab.onclick = () => els.panel.classList.toggle('show');
     window.addEventListener('online', () => { setStatus('syncing', 'Connexion rétablie — synchronisation…'); pollRemote(); scheduleSync(); });
     window.addEventListener('offline', () => setStatus('offline', 'Hors connexion — les changements restent en local.'));
-    try { await restoreSession(); } catch (error) { console.error(error); showError(error.message); els.overlay.classList.remove('hidden'); setStatus('offline', 'Connexion MongoDB indisponible.'); }
+    try { await restoreSession(); } catch (error) { console.error(error); showLoginForm(); showError(error.message); setStatus('offline', 'Connexion MongoDB indisponible.'); }
     window.CLC_COLLAB = { get status() { return { ready, syncing, user: profile, workspace, lastSync: latestSyncAt }; }, syncNow: () => syncChangedSections(true), signOut: async () => { await api('/api/login', { method: 'DELETE' }); await stop(); } };
   }
   init();
