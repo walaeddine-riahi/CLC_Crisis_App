@@ -1,0 +1,235 @@
+{
+  "desktop": {
+    "Situation": {
+      "body": [
+        1366,
+        1366
+      ],
+      "bad": [],
+      "any": []
+    },
+    "Veille météo / hydro": {
+      "body": [
+        1366,
+        1366
+      ],
+      "bad": [],
+      "any": []
+    },
+    "Décision": {
+      "body": [
+        1366,
+        1366
+      ],
+      "bad": [],
+      "any": []
+    },
+    "Actions": {
+      "body": [
+        1366,
+        1366
+      ],
+      "bad": [],
+      "any": []
+    },
+    "Sites": {
+      "body": [
+        1366,
+        1366
+      ],
+      "bad": [],
+      "any": []
+    },
+    "Réunion de crise": {
+      "body": [
+        1366,
+        1366
+      ],
+      "bad": [],
+      "any": []
+    },
+    "Journal": {
+      "body": [
+        1366,
+        1366
+      ],
+      "bad": [],
+      "any": []
+    }
+  },
+  "tablet": {
+    "Situation": {
+      "body": [
+        1024,
+        1024
+      ],
+      "bad": [],
+      "any": []
+    },
+    "Veille météo / hydro": {
+      "body": [
+        1024,
+        1024
+      ],
+      "bad": [],
+      "any": []
+    },
+    "Décision": {
+      "body": [
+        1024,
+        1024
+      ],
+      "bad": [],
+      "any": []
+    },
+    "Actions": {
+      "body": [
+        1024,
+        1024
+      ],
+      "bad": [],
+      "any": []
+    },
+    "Sites": {
+      "body": [
+        1024,
+        1024
+      ],
+      "bad": [],
+      "any": []
+    },
+    "Réunion de crise": {
+      "body": [
+        1024,
+        1024
+      ],
+      "bad": [],
+      "any": []
+    },
+    "Journal": {
+      "body": [
+        1024,
+        1024
+      ],
+      "bad": [],
+      "any": []
+    }
+  },
+  "mobile": {
+    "Situation": {
+      "body": [
+        390,
+        390
+      ],
+      "bad": [],
+      "any": []
+    },
+    "Veille météo / hydro": {
+      "body": [
+        390,
+        390
+      ],
+      "bad": [],
+      "any": []
+    },
+    "Décision": {
+      "body": [
+        390,
+        390
+      ],
+      "bad": [],
+      "any": []
+    },
+    "Actions": {
+      "body": [
+        390,
+        390
+      ],
+      "bad": [],
+      "any": []
+    },
+    "Sites": {
+      "body": [
+        390,
+        390
+      ],
+      "bad": [],
+      "any": []
+    },
+    "Réunion de crise": {
+      "body": [
+        390,
+        390
+      ],
+      "bad": [],
+      "any": []
+    },
+    "Journal": {
+      "body": [
+        390,
+        390
+      ],
+      "bad": [],
+      "any": []
+    }
+  },
+  "mobile_small": {
+    "Situation": {
+      "body": [
+        360,
+        360
+      ],
+      "bad": [],
+      "any": []
+    },
+    "Veille météo / hydro": {
+      "body": [
+        360,
+        360
+      ],
+      "bad": [],
+      "any": []
+    },
+    "Décision": {
+      "body": [
+        360,
+        360
+      ],
+      "bad": [],
+      "any": []
+    },
+    "Actions": {
+      "body": [
+        360,
+        360
+      ],
+      "bad": [],
+      "any": []
+    },
+    "Sites": {
+      "body": [
+        360,
+        360
+      ],
+      "bad": [],
+      "any": []
+    },
+    "Réunion de crise": {
+      "body": [
+        360,
+        360
+      ],
+      "bad": [],
+      "any": []
+    },
+    "Journal": {
+      "body": [
+        360,
+        360
+      ],
+      "bad": [],
+      "any": []
+    }
+  },
+  "pageerrors": []
+}

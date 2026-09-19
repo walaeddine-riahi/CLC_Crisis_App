@@ -1,0 +1,74 @@
+{
+  "login": {
+    "w": 350,
+    "h": 624.109375,
+    "left": 20,
+    "right": 370,
+    "top": 109.9375,
+    "bottom": 734.046875,
+    "vw": 390,
+    "vh": 844
+  },
+  "tabs": [
+    {
+      "name": "Situation",
+      "active": "v17-situation"
+    },
+    {
+      "name": "Veille météo / hydro",
+      "active": "v17-meteo"
+    },
+    {
+      "name": "Décision",
+      "active": "v17-decision"
+    },
+    {
+      "name": "Actions",
+      "active": "v17-actions"
+    },
+    {
+      "name": "Sites",
+      "active": "v17-sites"
+    },
+    {
+      "name": "Réunion de crise",
+      "active": "v17-meeting"
+    },
+    {
+      "name": "Journal",
+      "active": "v17-journal"
+    }
+  ],
+  "action_modal": {
+    "show": true,
+    "w": 354,
+    "h": 759.59375,
+    "left": 18,
+    "right": 372,
+    "top": 42.203125,
+    "bottom": 801.796875,
+    "scroll": true
+  },
+  "site_modal": {
+    "show": true,
+    "w": 354,
+    "h": 531,
+    "left": 18,
+    "right": 372,
+    "top": 156.5,
+    "bottom": 687.5,
+    "scroll": false
+  },
+  "collab_panel": {
+    "show": false,
+    "w": 0,
+    "h": 0,
+    "left": 0,
+    "right": 0,
+    "top": 0,
+    "bottom": 0,
+    "vw": 390,
+    "vh": 844
+  },
+  "errors": []
+}
