@@ -55,7 +55,12 @@
   async function api(url, options = {}) {
     const response = await fetch(url, { ...options, headers: { 'Content-Type': 'application/json', ...(options.headers || {}) }, cache: 'no-store' });
     const data = await response.json().catch(() => ({}));
-    if (!response.ok) { const error = new Error(data.error || `Erreur HTTP ${response.status}`); error.status = response.status; error.data = data; throw error; }
+    if (!response.ok) {
+      const fallback = response.status >= 500
+        ? 'Le service serveur est temporairement indisponible. Vérifiez la configuration MongoDB du déploiement.'
+        : `Erreur HTTP ${response.status}`;
+      const error = new Error(data.error || fallback); error.status = response.status; error.data = data; throw error;
+    }
     return data;
   }
   function canWrite(section) { const allowed = WRITE_SECTIONS[profile?.role] ?? []; return allowed === '*' || allowed.includes(section); }
