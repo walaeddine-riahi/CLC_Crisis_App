@@ -52,8 +52,27 @@
     return clone(local);
   }
 
+  const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
   async function api(url, options = {}) {
-    const response = await fetch(url, { ...options, headers: { 'Content-Type': 'application/json', ...(options.headers || {}) }, cache: 'no-store' });
+    const requestUrl = new URL(url, window.location.origin).toString();
+    let response;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        response = await fetch(requestUrl, {
+          ...options,
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+          cache: 'no-store'
+        });
+        break;
+      } catch (error) {
+        if (attempt === 1) {
+          const networkError = new Error('Connexion au serveur interrompue. Vérifiez votre réseau, puis réessayez.');
+          networkError.cause = error; throw networkError;
+        }
+        await wait(750);
+      }
+    }
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
       const fallback = response.status >= 500
@@ -157,7 +176,7 @@
     ready = false; clearInterval(pollTimer); clearInterval(presenceTimer); els.overlay.classList.remove('hidden'); setStatus('offline', 'Déconnecté.');
   }
   async function restoreSession() {
-    const session = await api('/api/auth/session');
+    const session = await api('/api/login');
     if (session.authenticated) await start(); else els.overlay.classList.remove('hidden');
   }
 
@@ -178,17 +197,17 @@
     els.form.addEventListener('submit', async (event) => {
       event.preventDefault(); hideError(); setStatus('syncing', 'Authentification…');
       try {
-        const result = await api('/api/auth/session', { method: 'POST', body: JSON.stringify({ email: els.email.value.trim(), password: els.password.value }) });
+        const result = await api('/api/login', { method: 'POST', body: JSON.stringify({ email: els.email.value.trim(), password: els.password.value }) });
         if (result.bootstrapped) flash('Premier administrateur créé avec succès.', 4000);
         await start();
       } catch (error) { showError(error.message); setStatus('offline', 'Authentification requise.'); }
     });
-    els.signout.onclick = async () => { await api('/api/auth/session', { method: 'DELETE' }); await stop(); };
+    els.signout.onclick = async () => { await api('/api/login', { method: 'DELETE' }); await stop(); };
     els.sync.onclick = () => syncChangedSections(true); els.manageUsers.onclick = createUser; els.fab.onclick = () => els.panel.classList.toggle('show');
     window.addEventListener('online', () => { setStatus('syncing', 'Connexion rétablie — synchronisation…'); pollRemote(); scheduleSync(); });
     window.addEventListener('offline', () => setStatus('offline', 'Hors connexion — les changements restent en local.'));
     try { await restoreSession(); } catch (error) { console.error(error); showError(error.message); els.overlay.classList.remove('hidden'); setStatus('offline', 'Connexion MongoDB indisponible.'); }
-    window.CLC_COLLAB = { get status() { return { ready, syncing, user: profile, workspace, lastSync: latestSyncAt }; }, syncNow: () => syncChangedSections(true), signOut: async () => { await api('/api/auth/session', { method: 'DELETE' }); await stop(); } };
+    window.CLC_COLLAB = { get status() { return { ready, syncing, user: profile, workspace, lastSync: latestSyncAt }; }, syncNow: () => syncChangedSections(true), signOut: async () => { await api('/api/login', { method: 'DELETE' }); await stop(); } };
   }
   init();
 })();
