@@ -433,7 +433,7 @@ img,svg{max-width:100%}
       <button type="submit">Se connecter à la situation partagée</button>
       <div id="collabLoginError" class="collab-error"></div>
     </form>
-    <p class="small">La clé utilisée dans le navigateur doit être une <b>Publishable Key</b> Supabase. Ne jamais placer de clé secrète/service_role dans ce fichier.</p>
+    <p class="small">La connexion à MongoDB est sécurisée côté serveur. Aucun identifiant de base de données n’est exposé dans le navigateur.</p>
   </div>
 </div>
 <div id="collabBanner" class="collab-banner"></div>
@@ -1117,7 +1117,7 @@ window.INITIAL_SNAPSHOT = {"meta": {"version": "V1.4 Multi-entités", "source": 
       journal:[{
         time:snap.meta?.instantanéTime || nowIso(),
         type:'Initialisation',
-        text:'Application V3.0.2 Collaboratif — Supabase connecté initialisée : moteur multi-modèles H+24/H+48/H+72/H+96, météo auto, terrain, PCA CLC et listes de contrôle locales Site Soliman.'
+        text:'Application V4.0 collaborative — Next.js et MongoDB : moteur multi-modèles H+24/H+48/H+72/H+96, météo auto, terrain, PCA CLC et listes de contrôle locales Site Soliman.'
       }],
       emergencyOverride:false,
       lastTerrainUpdate:null
@@ -2402,7 +2402,7 @@ Prochaine revue : ${state.crisis?.nextReview||'À définir'}`;
 </footer>
 
 
-<script id="collab-v3-runtime" type="text/plain">
+<script id="collab-v3-runtime-archive" type="text/plain" hidden>
 (() => {
   'use strict';
   const cfg = window.CLC_COLLAB_CONFIG || {};
