@@ -54,5 +54,5 @@ Vercel détecte automatiquement Next.js. La commande de build est `npm run build
 - Ne jamais préfixer `MONGODB_URI` par `NEXT_PUBLIC_`.
 - `.env.local` est exclu de Git.
 - Les mots de passe utilisateurs sont hachés avec `scrypt` et un sel aléatoire.
-- Les sessions expirent automatiquement après sept jours via un index TTL MongoDB.
+- Le cookie d’authentification est limité à la session du navigateur. Les sessions serveur expirent aussi automatiquement après sept jours via un index TTL MongoDB.
 - Faire tourner l'identifiant MongoDB de test avant une utilisation de production.
