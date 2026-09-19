@@ -1179,8 +1179,10 @@ window.INITIAL_SNAPSHOT = {"meta": {"version": "V1.4 Multi-entités", "source": 
   let featureEls = {};
   let project = ([x,y]) => [0,0];
 
-  function persist(){
+  let collaborationPersistHook = null;
+  function persist(notifyCollaboration=true){
     try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }catch(e){}
+    if(notifyCollaboration && typeof collaborationPersistHook==='function') collaborationPersistHook();
   }
   function addJournal(type,text){
     state.journal = state.journal || [];
@@ -2374,6 +2376,16 @@ Prochaine revue : ${state.crisis?.nextReview||'À définir'}`;
   function v17OpenSite(k){const modal=document.getElementById('v17SiteModal'),s=state.siteSituation[k],d=V17_SITES[k];document.getElementById('v17SiteModalTitle').textContent=`${d.label} — mise à jour`;document.getElementById('v17SiteForm').innerHTML=`<div class="v17-form"><label>Situation<select id="v17SStatus"><option>Non vérifié</option><option>Normal</option><option>À surveiller</option><option>Dégradé</option><option>Critique</option></select></label><label>Accès<select id="v17SAccess"><option>Non vérifié</option><option>Praticable</option><option>Dégradé</option><option>Bloqué</option></select></label><label>Eau / submersion<select id="v17SWater"><option>Non vérifié</option><option>Absente</option><option>Présente</option><option>En hausse</option><option>Submersion</option></select></label><label>Sécurité personnel<select id="v17SSafety"><option>Non vérifié</option><option>Normale</option><option>Vigilance</option><option>Retrait partiel</option><option>Retrait requis</option></select></label><label class="full">Observation<textarea id="v17SNote"></textarea></label></div><div class="v17-actions" style="margin-top:14px"><button class="v17-btn primary" id="v17SSave">Enregistrer</button></div>`;const q=x=>document.getElementById(x);q('v17SStatus').value=s.status;q('v17SAccess').value=s.access;q('v17SWater').value=s.water;q('v17SSafety').value=s.safety;q('v17SNote').value=s.note||'';q('v17SSave').onclick=()=>{s.status=q('v17SStatus').value;s.access=q('v17SAccess').value;s.water=q('v17SWater').value;s.safety=q('v17SSafety').value;s.note=q('v17SNote').value.trim();s.updated=nowIso();addJournal('Situation',`${d.label} : ${s.status} — accès ${s.access} — eau ${s.water}${s.note?' — '+s.note:''}`);persist();modal.classList.remove('show');v17Render();};modal.classList.add('show');}
   function v17RenderJournal(){const el=document.getElementById('v17-journal');if(!el)return;const rows=[];for(const j of state.journal||[]){const prev=rows.at(-1);if(prev&&prev.type===j.type&&prev.text===j.text&&Math.abs(new Date(prev.time)-new Date(j.time))<10*60*1000)continue;rows.push(j);if(rows.length>=100)break;}el.innerHTML=`<div class="v17-head"><div><h2>Journal de crise</h2><p>Décisions, évolutions automatiques, situations, actions et blocages.</p></div><div class="v17-actions"><button class="v17-btn" id="v17AddJournal">Ajouter une note</button></div></div><div class="v17-log">${rows.map(j=>`<div class="v17-log-item"><b>${v17Esc(j.type)}</b> <small>${v17Esc(v17FmtTime(j.time))}</small><p>${v17Esc(j.text)}</p></div>`).join('')||'<div class="v17-empty">Aucune entrée.</div>'}</div>`;document.getElementById('v17AddJournal')?.addEventListener('click',()=>{const note=prompt('Note à enregistrer :');if(!note)return;addJournal('Note',`${state.profile.name||state.profile.role} — ${note}`);v17Render();});}
   function v17Bind(){document.querySelectorAll('.v17-nav button[data-v17]').forEach(b=>b.addEventListener('click',()=>v17SetPage(b.dataset.v17)));document.getElementById('v20AlertsBtn')?.addEventListener('click',()=>{(state.v20?.notifications||[]).forEach(n=>n.read=true);persist();v20RenderAlerts();v20RenderAlertBadge();document.getElementById('v20AlertsModal')?.classList.add('show');});document.getElementById('v17Role')?.addEventListener('change',e=>{state.profile.role=e.target.value;persist();v17Render();if(state.profile.role==='Responsable d’action')v17SetPage('actions');});document.getElementById('v17UserName')?.addEventListener('change',e=>{state.profile.name=e.target.value.trim();persist();v17Render();});document.getElementById('v17RefreshWeather')?.addEventListener('click',async()=>{toast('Actualisation météo…');try{await refreshAutoWeather(true);await refreshMultiWeather(true);}catch(e){}v17Render();toast('Météo actualisée.');});document.querySelectorAll('[data-close-v17]').forEach(b=>b.onclick=()=>b.closest('.v17-modal').classList.remove('show'));document.querySelectorAll('.v17-modal').forEach(m=>m.addEventListener('click',e=>{if(e.target===m)m.classList.remove('show');}));}
+  window.CLC_APP_BRIDGE = {
+    getState:()=>state,
+    replaceState:(next,{notify=false,render=true}={})=>{
+      state=next;
+      persist(notify);
+      if(render){renderAll();v17Render();}
+    },
+    persist:({notify=false}={})=>persist(notify),
+    setPersistHook:(hook)=>{collaborationPersistHook=typeof hook==='function'?hook:null;}
+  };
   populateSelectors();
   resetTerrainForm();
   renderAll();
@@ -2599,7 +2611,7 @@ Prochaine revue : ${state.crisis?.nextReview||'À définir'}`;
 })();
 </script>
 
-<script src="/mongo-collab.js"></script>
+<script src="/mongo-collab.js?v=4.0.3"></script>
 
 </body>
 </html>
