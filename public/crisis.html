@@ -232,7 +232,7 @@ body{background:#f3f6fb}
 
 <style id="collab-v3-style">
   .collab-login-overlay{position:fixed;inset:0;z-index:100000;background:rgba(9,20,35,.86);backdrop-filter:blur(7px);display:flex;align-items:center;justify-content:center;padding:20px;font-family:inherit}
-  .collab-login-overlay.hidden{display:none}.collab-login-card{width:min(520px,100%);background:#fff;border-radius:22px;box-shadow:0 30px 80px rgba(0,0,0,.35);padding:26px;border:1px solid #dbe4ee}.collab-login-card h2{margin:0 0 8px;color:#0f2740;font-size:24px}.collab-login-card p{color:#52667a;line-height:1.45}.collab-login-card label{display:block;font-size:12px;font-weight:800;color:#52667a;text-transform:uppercase;letter-spacing:.04em;margin:14px 0 6px}.collab-login-card input{width:100%;box-sizing:border-box;padding:12px 13px;border:1px solid #c8d5e2;border-radius:11px;font:inherit}.collab-login-card button{width:100%;margin-top:16px;padding:12px 14px;border:0;border-radius:11px;background:#123c5a;color:#fff;font-weight:800;cursor:pointer}.collab-login-card .small{font-size:12px;color:#6b7f90}.collab-error{margin-top:12px;padding:10px 12px;border-radius:10px;background:#fff1f1;color:#a11d1d;display:none}.collab-error.show{display:block}
+  .collab-login-overlay.hidden{display:none}.collab-login-card{width:min(520px,100%);background:#fff;border-radius:22px;box-shadow:0 30px 80px rgba(0,0,0,.35);padding:26px;border:1px solid #dbe4ee}.collab-login-card [hidden]{display:none!important}.collab-login-card h2{margin:0 0 8px;color:#0f2740;font-size:24px}.collab-login-card p{color:#52667a;line-height:1.45}.collab-login-card label{display:block;font-size:12px;font-weight:800;color:#52667a;text-transform:uppercase;letter-spacing:.04em;margin:14px 0 6px}.collab-login-card input{width:100%;box-sizing:border-box;padding:12px 13px;border:1px solid #c8d5e2;border-radius:11px;font:inherit}.collab-login-card button{width:100%;margin-top:16px;padding:12px 14px;border:0;border-radius:11px;background:#123c5a;color:#fff;font-weight:800;cursor:pointer}.collab-login-card .small{font-size:12px;color:#6b7f90}.collab-error{margin-top:12px;padding:10px 12px;border-radius:10px;background:#fff1f1;color:#a11d1d;display:none}.collab-error.show{display:block}
   .collab-fab{position:fixed;right:18px;bottom:18px;z-index:99998;background:#0f2740;color:#fff;border:0;border-radius:999px;padding:10px 14px;box-shadow:0 10px 30px rgba(0,0,0,.22);font:700 13px/1.2 inherit;display:flex;align-items:center;gap:8px;cursor:pointer}.collab-dot{width:9px;height:9px;border-radius:50%;background:#94a3b8;box-shadow:0 0 0 3px rgba(255,255,255,.15)}.collab-dot.online{background:#22c55e}.collab-dot.syncing{background:#f59e0b}.collab-dot.offline{background:#ef4444}.collab-panel{position:fixed;right:18px;bottom:66px;z-index:99999;width:min(390px,calc(100vw - 36px));max-height:70vh;overflow:auto;background:#fff;border:1px solid #dbe4ee;border-radius:18px;box-shadow:0 22px 55px rgba(0,0,0,.28);padding:16px;display:none;font-family:inherit}.collab-panel.show{display:block}.collab-panel h3{margin:0 0 4px;color:#0f2740}.collab-muted{font-size:12px;color:#6b7f90}.collab-kv{display:grid;grid-template-columns:110px 1fr;gap:7px 10px;font-size:13px;margin:12px 0}.collab-kv b{color:#52667a}.collab-users{display:flex;flex-direction:column;gap:7px;margin-top:10px}.collab-user{padding:9px 10px;background:#f5f8fb;border-radius:10px;font-size:12px;display:flex;justify-content:space-between;gap:8px}.collab-panel-actions{display:flex;gap:8px;margin-top:14px}.collab-panel-actions button{flex:1;border:1px solid #c8d5e2;background:#fff;border-radius:9px;padding:9px;font:700 12px inherit;cursor:pointer}.collab-panel-actions button.primary{background:#123c5a;color:#fff;border-color:#123c5a}.collab-banner{position:fixed;top:10px;left:50%;transform:translateX(-50%);z-index:99997;background:rgba(15,39,64,.95);color:#fff;border-radius:999px;padding:7px 13px;font:700 12px/1.2 inherit;box-shadow:0 8px 20px rgba(0,0,0,.18);display:none}.collab-banner.show{display:block}
   @media(max-width:640px){.collab-fab{right:10px;bottom:10px}.collab-panel{right:10px;bottom:58px;width:calc(100vw - 20px)}.collab-login-card{padding:20px}}
 </style>
@@ -425,7 +425,8 @@ img,svg{max-width:100%}
   <div class="collab-login-card">
     <h2>Groupe Délice — Cellule de crise collaborative</h2>
     <p>V4.0 multi-utilisateurs avec Next.js et MongoDB. À la toute première ouverture, le premier compte créé devient administrateur de la cellule de crise.</p>
-    <form id="collabLoginForm">
+    <div id="collabSessionCheck" class="collab-muted">Vérification de la session sécurisée…</div>
+    <form id="collabLoginForm" hidden>
       <label for="collabEmail">E-mail</label>
       <input id="collabEmail" type="email" autocomplete="username" required placeholder="prenom.nom@delice.tn">
       <label for="collabPassword">Mot de passe</label>
@@ -2611,7 +2612,7 @@ Prochaine revue : ${state.crisis?.nextReview||'À définir'}`;
 })();
 </script>
 
-<script src="/mongo-collab.js?v=4.0.3"></script>
+<script src="/mongo-collab.js?v=4.0.4"></script>
 
 </body>
 </html>
