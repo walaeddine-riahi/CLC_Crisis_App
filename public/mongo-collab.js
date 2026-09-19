@@ -8,6 +8,7 @@
     sync: $('collabSyncNow'), manageUsers: $('collabManageUsers'), signout: $('collabSignOut'), banner: $('collabBanner')
   };
   const ROLE_LABELS = { ADMIN: 'Administrateur', GROUP_CRISIS: 'Cellule Groupe', SITE_CLC: 'Cellule CLC', SITE_CF: 'Cellule CF', ACTION_OWNER: 'Responsable d’action', DG: 'Direction Générale', VIEWER: 'Lecture seule' };
+  const app = window.CLC_APP_BRIDGE;
   const WRITE_SECTIONS = {
     ADMIN: '*', GROUP_CRISIS: '*',
     SITE_CLC: ['actions', 'simpleChecklists', 'entityDecisions', 'terrainEvidence', 'terrainByZone', 'journal', 'logistics', 'scope', 'emergencyOverride', 'lastTerrainUpdate', 'meteo', 'autoWeather', 'multiWeather'],
@@ -15,7 +16,7 @@
     ACTION_OWNER: ['actions', 'journal'], DG: ['deployment', 'entityDecisions', 'journal', 'decisions', 'meta'], VIEWER: []
   };
   let profile = null, workspace = null, ready = false, syncing = false, syncTimer = null, pollTimer = null, presenceTimer = null;
-  let lastSynced = {}, versions = {}, basePersist = null, latestSyncAt = null, lastPollAt = null;
+  let lastSynced = {}, versions = {}, latestSyncAt = null, lastPollAt = null;
 
   const clone = (v) => v === undefined ? undefined : JSON.parse(JSON.stringify(v));
   const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
@@ -102,8 +103,9 @@
     els.users.innerHTML = rows.map(p => `<div class="collab-user"><span><b>${escapeHtml(p.displayName || p.email || 'Utilisateur')}</b><br><span class="collab-muted">${escapeHtml(ROLE_LABELS[p.role] || p.role || '')} ${p.entity ? '• ' + escapeHtml(p.entity) : ''}</span></span><span>${p.onlineAt ? new Date(p.onlineAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : ''}</span></div>`).join('');
   }
   function applyRows(rows) {
-    for (const row of rows) { state[row.sectionKey] = clone(row.payload); versions[row.sectionKey] = Number(row.version || 0); lastSynced[row.sectionKey] = clone(row.payload); }
-    state.version = '4.0'; basePersist?.(); renderAll(); latestSyncAt = new Date().toISOString(); updateIdentity();
+    const next = clone(app.getState());
+    for (const row of rows) { next[row.sectionKey] = clone(row.payload); versions[row.sectionKey] = Number(row.version || 0); lastSynced[row.sectionKey] = clone(row.payload); }
+    next.version = '4.0'; app.replaceState(next, { notify: false, render: true }); latestSyncAt = new Date().toISOString(); updateIdentity();
   }
 
   async function bootstrap() {
@@ -111,35 +113,36 @@
     profile = data.user; workspace = data.workspace; updateIdentity();
     if (!data.sections.length) {
       if (!['ADMIN', 'GROUP_CRISIS'].includes(profile.role)) throw new Error('Situation centrale non initialisée. Un administrateur doit se connecter en premier.');
-      await api('/api/collab/bootstrap', { method: 'POST', body: JSON.stringify({ initialState: state }) });
+      await api('/api/collab/bootstrap', { method: 'POST', body: JSON.stringify({ initialState: app.getState() }) });
       data = await api('/api/collab/bootstrap');
     }
     lastSynced = {}; versions = {}; applyRows(data.sections); lastPollAt = new Date().toISOString();
   }
 
   async function syncSection(key, localValue) {
-    if (!canWrite(key)) { state[key] = clone(lastSynced[key]); basePersist?.(); renderAll(); flash(`Votre rôle ne permet pas de modifier « ${key} ».`); return; }
+    if (!canWrite(key)) { const next = app.getState(); next[key] = clone(lastSynced[key]); app.replaceState(next, { notify: false, render: true }); flash(`Votre rôle ne permet pas de modifier « ${key} ».`); return; }
     for (let attempt = 0; attempt < 4; attempt++) {
       try {
         const row = await api('/api/collab/section', { method: 'PUT', body: JSON.stringify({ sectionKey: key, payload: localValue, baseVersion: versions[key] || 0 }) });
-        state[key] = clone(row.payload); lastSynced[key] = clone(row.payload); versions[key] = Number(row.version); return;
+        const next = app.getState(); next[key] = clone(row.payload); app.replaceState(next, { notify: false, render: false }); lastSynced[key] = clone(row.payload); versions[key] = Number(row.version); return;
       } catch (error) {
         if (error.status !== 409 || !error.data?.current) throw error;
         const remote = error.data.current;
         localValue = threeWay(lastSynced[key], localValue, remote.payload, [key]);
-        lastSynced[key] = clone(remote.payload); versions[key] = Number(remote.version); state[key] = clone(localValue);
+        lastSynced[key] = clone(remote.payload); versions[key] = Number(remote.version); const next = app.getState(); next[key] = clone(localValue); app.replaceState(next, { notify: false, render: false });
       }
     }
     throw new Error(`Conflit persistant sur ${key}.`);
   }
   async function syncChangedSections(force = false) {
     if (!ready || syncing || !navigator.onLine) return;
-    const keys = Object.keys(state).filter(k => (force || !eq(state[k], lastSynced[k])) && canWrite(k));
+    const current = app.getState();
+    const keys = Object.keys(current).filter(k => (force || !eq(current[k], lastSynced[k])) && canWrite(k));
     if (!keys.length) { setStatus('online', 'Synchronisé — aucun changement en attente.'); return; }
     syncing = true; setStatus('syncing', `${keys.length} section(s) en synchronisation…`);
     try {
-      for (const key of keys) if (force || !eq(state[key], lastSynced[key])) await syncSection(key, state[key]);
-      latestSyncAt = new Date().toISOString(); updateIdentity(); basePersist?.(); setStatus('online', 'Toutes les modifications sont synchronisées.');
+      for (const key of keys) if (force || !eq(app.getState()[key], lastSynced[key])) await syncSection(key, app.getState()[key]);
+      latestSyncAt = new Date().toISOString(); updateIdentity(); app.persist({ notify: false }); setStatus('online', 'Toutes les modifications sont synchronisées.');
     } catch (error) { console.error(error); setStatus('offline', `Synchronisation interrompue : ${error.message}`); flash('Modifications conservées localement — nouvelle tentative automatique.', 3500); }
     finally { syncing = false; }
   }
@@ -151,13 +154,14 @@
       const data = await api(`/api/collab/section${lastPollAt ? `?after=${encodeURIComponent(lastPollAt)}` : ''}`);
       lastPollAt = data.serverTime;
       let changed = false;
+      const next = app.getState();
       for (const row of data.sections) {
         if (Number(row.version) <= Number(versions[row.sectionKey] || 0)) continue;
-        const key = row.sectionKey, remote = clone(row.payload), merged = threeWay(lastSynced[key], state[key], remote, [key]);
-        lastSynced[key] = clone(remote); versions[key] = Number(row.version); state[key] = clone(merged); changed = true;
+        const key = row.sectionKey, remote = clone(row.payload), merged = threeWay(lastSynced[key], next[key], remote, [key]);
+        lastSynced[key] = clone(remote); versions[key] = Number(row.version); next[key] = clone(merged); changed = true;
         if (!eq(merged, remote)) scheduleSync();
       }
-      if (changed) { state.version = '4.0'; basePersist?.(); renderAll(); latestSyncAt = new Date().toISOString(); updateIdentity(); flash('Mise à jour reçue de la situation Groupe.'); }
+      if (changed) { next.version = '4.0'; app.replaceState(next, { notify: false, render: true }); latestSyncAt = new Date().toISOString(); updateIdentity(); flash('Mise à jour reçue de la situation Groupe.'); }
       setStatus('online', 'Connecté à la situation Groupe.');
     } catch (error) { console.warn('poll', error); setStatus('offline', 'Connexion centrale temporairement indisponible.'); }
   }
@@ -168,12 +172,12 @@
   async function start() {
     ready = false; setStatus('syncing', 'Connexion à MongoDB…'); await bootstrap();
     ready = true; els.overlay.classList.add('hidden'); setStatus('online', 'Synchronisé avec la base centrale MongoDB.');
-    persist = function () { try { basePersist?.(); } catch (_) { } scheduleSync(); };
+    app.setPersistHook(scheduleSync);
     clearInterval(pollTimer); clearInterval(presenceTimer); pollTimer = setInterval(pollRemote, 4000); presenceTimer = setInterval(heartbeat, 15000);
     await heartbeat(); scheduleSync();
   }
   async function stop() {
-    ready = false; clearInterval(pollTimer); clearInterval(presenceTimer); els.overlay.classList.remove('hidden'); setStatus('offline', 'Déconnecté.');
+    ready = false; app.setPersistHook(null); clearInterval(pollTimer); clearInterval(presenceTimer); els.overlay.classList.remove('hidden'); setStatus('offline', 'Déconnecté.');
   }
   async function restoreSession() {
     const session = await api('/api/login');
@@ -193,7 +197,7 @@
   }
 
   async function init() {
-    basePersist = typeof persist === 'function' ? persist : () => {};
+    if (!app) { showError('Le cockpit décisionnel n’est pas initialisé. Actualisez la page.'); setStatus('offline', 'Initialisation incomplète.'); return; }
     els.form.addEventListener('submit', async (event) => {
       event.preventDefault(); hideError(); setStatus('syncing', 'Authentification…');
       try {
