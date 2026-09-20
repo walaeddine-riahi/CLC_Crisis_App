@@ -22,18 +22,23 @@ export async function GET() {
     const now = new Date();
     const [users, sessions] = await Promise.all([
       db.collection("users").find({}, { projection: { passwordHash: 0 } }).sort({ displayName: 1 }).toArray(),
-      db.collection("sessions").aggregate<{ _id: ObjectId; count: number }>([
-        { $match: { expiresAt: { $gt: now } } },
-        { $group: { _id: "$userId", count: { $sum: 1 } } },
-      ]).toArray(),
+      db.collection("sessions").find(
+        { expiresAt: { $gt: now }, userId: { $exists: true } },
+        { projection: { userId: 1 } },
+      ).toArray(),
     ]);
-    const sessionCounts = new Map(sessions.map((row) => [row._id.toString(), row.count]));
+    const sessionCounts = new Map<string, number>();
+    for (const session of sessions) {
+      if (!(session.userId instanceof ObjectId)) continue;
+      const userId = session.userId.toHexString();
+      sessionCounts.set(userId, (sessionCounts.get(userId) || 0) + 1);
+    }
     return NextResponse.json({
       currentUserId: admin._id.toString(),
       roles: ROLES,
       users: users.map((user) => ({
         id: user._id.toString(), email: user.email, displayName: user.displayName, role: user.role,
-        entity: user.entity, active: user.active, createdAt: user.createdAt || null,
+        entity: user.entity || "Groupe", active: user.active !== false, createdAt: user.createdAt || null,
         updatedAt: user.updatedAt || null, lastLoginAt: user.lastLoginAt || null,
         activeSessions: sessionCounts.get(user._id.toString()) || 0,
       })),
