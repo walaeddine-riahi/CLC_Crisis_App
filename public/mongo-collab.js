@@ -9,12 +9,14 @@
     adminNav: $('v17AdminNav'), adminHost: $('v17-admin')
   };
   const ROLE_LABELS = { ADMIN: 'Administrateur', GROUP_CRISIS: 'Cellule Groupe', SITE_CLC: 'Cellule CLC', SITE_CF: 'Cellule CF', ACTION_OWNER: 'Responsable d’action', DG: 'Direction Générale', VIEWER: 'Lecture seule' };
+  const OPERATIONAL_ROLE_LABELS = { ADMIN: 'Administrateur', GROUP_CRISIS: 'Gestion des risques Groupe', SITE_CLC: 'Coordinateur crise local', SITE_CF: 'Coordinateur crise local', ACTION_OWNER: 'Responsable d’action', DG: 'Direction Générale', VIEWER: 'Lecture seule' };
+  const LOCAL_ONLY_KEYS = new Set(['profile']);
   const app = window.CLC_APP_BRIDGE;
   const WRITE_SECTIONS = {
     ADMIN: '*', GROUP_CRISIS: '*',
     SITE_CLC: ['actions', 'simpleChecklists', 'entityDecisions', 'terrainEvidence', 'terrainByZone', 'journal', 'logistics', 'scope', 'emergencyOverride', 'lastTerrainUpdate', 'meteo', 'autoWeather', 'multiWeather'],
     SITE_CF: ['actions', 'simpleChecklists', 'entityDecisions', 'terrainEvidence', 'terrainByZone', 'journal', 'scope', 'emergencyOverride', 'lastTerrainUpdate', 'meteo', 'autoWeather', 'multiWeather'],
-    ACTION_OWNER: ['actions', 'journal'], DG: ['deployment', 'entityDecisions', 'journal', 'decisions', 'meta'], VIEWER: []
+    ACTION_OWNER: ['actions', 'simpleChecklists', 'journal'], DG: ['crisis', 'deployment', 'entityDecisions', 'journal', 'decisions', 'meta'], VIEWER: []
   };
   let profile = null, workspace = null, ready = false, syncing = false, syncTimer = null, pollTimer = null, presenceTimer = null;
   let lastSynced = {}, versions = {}, latestSyncAt = null, lastPollAt = null;
@@ -95,12 +97,23 @@
   function hideError() { els.error.classList.remove('show'); }
   function showLoginForm() { els.sessionCheck.hidden = true; els.form.hidden = false; els.overlay.classList.remove('hidden'); }
   function updateIdentity() {
+    window.CLC_AUTH_ROLE = profile?.role || 'VIEWER';
+    document.documentElement.dataset.authRole = window.CLC_AUTH_ROLE;
     els.user.textContent = profile?.displayName || profile?.email || '—'; els.role.textContent = ROLE_LABELS[profile?.role] || profile?.role || '—';
     els.entity.textContent = profile?.entity || 'Groupe'; els.workspace.textContent = workspace?.name || '—';
     if (els.manageUsers) els.manageUsers.style.display = profile?.role === 'ADMIN' ? '' : 'none';
     if (els.adminNav) els.adminNav.hidden = profile?.role !== 'ADMIN';
     if (profile?.role !== 'ADMIN' && els.adminHost?.classList.contains('active')) document.querySelector('[data-v17="situation"]')?.click();
     els.last.textContent = latestSyncAt ? new Date(latestSyncAt).toLocaleTimeString('fr-FR') : '—';
+  }
+  function applyAccountIdentity(next) {
+    if (!profile) return next;
+    next.profile = {
+      ...(next.profile || {}),
+      role: OPERATIONAL_ROLE_LABELS[profile.role] || 'Lecture seule',
+      name: profile.displayName || profile.email || 'Utilisateur',
+    };
+    return next;
   }
   function escapeHtml(value) { return String(value).replace(/[&<>'"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[c])); }
   function renderPresence(rows) {
@@ -109,8 +122,11 @@
   }
   function applyRows(rows) {
     const next = clone(app.getState());
-    for (const row of rows) { next[row.sectionKey] = clone(row.payload); versions[row.sectionKey] = Number(row.version || 0); lastSynced[row.sectionKey] = clone(row.payload); }
-    next.version = '4.0'; app.replaceState(next, { notify: false, render: true }); latestSyncAt = new Date().toISOString(); updateIdentity();
+    for (const row of rows) {
+      if (LOCAL_ONLY_KEYS.has(row.sectionKey)) continue;
+      next[row.sectionKey] = clone(row.payload); versions[row.sectionKey] = Number(row.version || 0); lastSynced[row.sectionKey] = clone(row.payload);
+    }
+    applyAccountIdentity(next); next.version = '4.0'; app.replaceState(next, { notify: false, render: true }); latestSyncAt = new Date().toISOString(); updateIdentity();
   }
 
   async function bootstrap() {
@@ -118,7 +134,9 @@
     profile = data.user; workspace = data.workspace; updateIdentity();
     if (!data.sections.length) {
       if (!['ADMIN', 'GROUP_CRISIS'].includes(profile.role)) throw new Error('Situation centrale non initialisée. Un administrateur doit se connecter en premier.');
-      await api('/api/collab/bootstrap', { method: 'POST', body: JSON.stringify({ initialState: app.getState() }) });
+      const initialState = clone(app.getState());
+      for (const key of LOCAL_ONLY_KEYS) delete initialState[key];
+      await api('/api/collab/bootstrap', { method: 'POST', body: JSON.stringify({ initialState }) });
       data = await api('/api/collab/bootstrap');
     }
     lastSynced = {}; versions = {}; applyRows(data.sections); lastPollAt = new Date().toISOString();
@@ -142,7 +160,7 @@
   async function syncChangedSections(force = false) {
     if (!ready || syncing || !navigator.onLine) return;
     const current = app.getState();
-    const keys = Object.keys(current).filter(k => (force || !eq(current[k], lastSynced[k])) && canWrite(k));
+    const keys = Object.keys(current).filter(k => !LOCAL_ONLY_KEYS.has(k) && (force || !eq(current[k], lastSynced[k])) && canWrite(k));
     if (!keys.length) { setStatus('online', 'Synchronisé — aucun changement en attente.'); return; }
     syncing = true; setStatus('syncing', `${keys.length} section(s) en synchronisation…`);
     try {
@@ -161,12 +179,13 @@
       let changed = false;
       const next = app.getState();
       for (const row of data.sections) {
+        if (LOCAL_ONLY_KEYS.has(row.sectionKey)) continue;
         if (Number(row.version) <= Number(versions[row.sectionKey] || 0)) continue;
         const key = row.sectionKey, remote = clone(row.payload), merged = threeWay(lastSynced[key], next[key], remote, [key]);
         lastSynced[key] = clone(remote); versions[key] = Number(row.version); next[key] = clone(merged); changed = true;
         if (!eq(merged, remote)) scheduleSync();
       }
-      if (changed) { next.version = '4.0'; app.replaceState(next, { notify: false, render: true }); latestSyncAt = new Date().toISOString(); updateIdentity(); flash('Mise à jour reçue de la situation Groupe.'); }
+      if (changed) { applyAccountIdentity(next); next.version = '4.0'; app.replaceState(next, { notify: false, render: true }); latestSyncAt = new Date().toISOString(); updateIdentity(); flash('Mise à jour reçue de la situation Groupe.'); }
       setStatus('online', 'Connecté à la situation Groupe.');
     } catch (error) { console.warn('poll', error); setStatus('offline', 'Connexion centrale temporairement indisponible.'); }
   }

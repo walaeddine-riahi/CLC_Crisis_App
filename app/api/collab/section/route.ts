@@ -12,6 +12,47 @@ async function currentWorkspace() {
   return db.collection("workspaces").findOne({ code: process.env.CLC_WORKSPACE_CODE || "DELICE-INONDATIONS", isActive: true });
 }
 
+type ActionRecord = Record<string, unknown>;
+
+const actionOwnerFields = new Set(["status", "progress", "difficulty"]);
+
+function sameJson(left: unknown, right: unknown) {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function isAssignedTo(action: ActionRecord, displayName: string) {
+  const owner = typeof action.owner === "string" ? action.owner.trim().toLocaleLowerCase("fr") : "";
+  const name = displayName.trim().toLocaleLowerCase("fr");
+  return Boolean(name && owner.includes(name));
+}
+
+function isAllowedActionUpdate(previous: unknown, next: unknown, displayName: string) {
+  if (!previous || !next || typeof previous !== "object" || typeof next !== "object" || Array.isArray(previous) || Array.isArray(next)) return false;
+  const before = previous as ActionRecord;
+  const after = next as ActionRecord;
+  if (String(before.id ?? "") !== String(after.id ?? "")) return false;
+  if (!isAssignedTo(before, displayName)) return sameJson(before, after);
+  const keys = new Set([...Object.keys(before), ...Object.keys(after)]);
+  for (const key of keys) {
+    if (!actionOwnerFields.has(key) && !sameJson(before[key], after[key])) return false;
+  }
+  return true;
+}
+
+function isAllowedActionArray(previous: unknown, next: unknown, displayName: string) {
+  if (!Array.isArray(previous) || !Array.isArray(next) || previous.length !== next.length) return false;
+  return previous.every((action, index) => isAllowedActionUpdate(action, next[index], displayName));
+}
+
+function isAllowedOwnerPayload(sectionKey: string, previous: unknown, next: unknown, displayName: string) {
+  if (sectionKey === "actions") return isAllowedActionArray(previous, next, displayName);
+  if (sectionKey !== "simpleChecklists" || !previous || !next || typeof previous !== "object" || typeof next !== "object" || Array.isArray(previous) || Array.isArray(next)) return false;
+  const before = previous as Record<string, unknown>;
+  const after = next as Record<string, unknown>;
+  const keys = new Set([...Object.keys(before), ...Object.keys(after)]);
+  return [...keys].every((key) => key in before && key in after && isAllowedActionArray(before[key], after[key], displayName));
+}
+
 export async function GET(request: NextRequest) {
   const user = await getCurrentUser();
   if (!user) return errorResponse("Authentification requise.", 401);
@@ -42,6 +83,9 @@ export async function PUT(request: NextRequest) {
   const sections = db.collection("sections");
   const existing = await sections.findOne({ workspaceId: workspace._id, sectionKey });
   if (!existing) return errorResponse("Section centrale absente.", 404);
+  if (user.role === "ACTION_OWNER" && sectionKey !== "journal" && !isAllowedOwnerPayload(sectionKey, existing.payload, body?.payload, user.displayName)) {
+    return errorResponse("Vous pouvez uniquement mettre à jour l’état, l’avancement et la difficulté de vos actions affectées.", 403);
+  }
   if (Number(body?.baseVersion) !== Number(existing.version)) {
     return errorResponse("Conflit de version.", 409, { current: { sectionKey, payload: existing.payload, version: existing.version, updatedAt: existing.updatedAt } });
   }

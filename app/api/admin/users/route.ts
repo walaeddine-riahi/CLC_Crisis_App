@@ -104,14 +104,14 @@ export async function PATCH(request: NextRequest) {
     if (body.active !== undefined) { updates.active = Boolean(body.active); changed.push("active"); }
     if (body.role !== undefined) {
       if (!ROLES.includes(body.role)) return errorResponse("Rôle invalide.");
-      updates.role = body.role; changed.push("role");
+      if (body.role !== target.role) { updates.role = body.role; changed.push("role"); }
     }
     if (body.password !== undefined) {
       if (body.password.length < 10) return errorResponse("Le mot de passe doit contenir au moins 10 caractères.");
       updates.passwordHash = await hashPassword(body.password); changed.push("password");
     }
     if (changed.length) await users.updateOne({ _id: targetId }, { $set: updates });
-    const revokeSessions = body.revokeSessions === true || body.active === false || body.password !== undefined;
+    const revokeSessions = body.revokeSessions === true || body.active === false || body.password !== undefined || changed.includes("role");
     if (revokeSessions) await db.collection("sessions").deleteMany({ userId: targetId });
     await db.collection("auditLogs").insertOne({ eventType: revokeSessions && !changed.length ? "sessions_revoked" : "user_updated", userId: admin._id, targetUserId: targetId, details: { fields: changed, revokedSessions: revokeSessions, targetEmail: target.email }, at: new Date() });
     return NextResponse.json({ ok: true, revokedSessions: revokeSessions });

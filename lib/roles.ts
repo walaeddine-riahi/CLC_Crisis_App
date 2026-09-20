@@ -6,8 +6,8 @@ const writeSections: Record<Role, "*" | string[]> = {
   GROUP_CRISIS: "*",
   SITE_CLC: ["actions", "simpleChecklists", "entityDecisions", "terrainEvidence", "terrainByZone", "journal", "logistics", "scope", "emergencyOverride", "lastTerrainUpdate", "meteo", "autoWeather", "multiWeather"],
   SITE_CF: ["actions", "simpleChecklists", "entityDecisions", "terrainEvidence", "terrainByZone", "journal", "scope", "emergencyOverride", "lastTerrainUpdate", "meteo", "autoWeather", "multiWeather"],
-  ACTION_OWNER: ["actions", "journal"],
-  DG: ["deployment", "entityDecisions", "journal", "decisions", "meta"],
+  ACTION_OWNER: ["actions", "simpleChecklists", "journal"],
+  DG: ["crisis", "deployment", "entityDecisions", "journal", "decisions", "meta"],
   VIEWER: [],
 };
 
