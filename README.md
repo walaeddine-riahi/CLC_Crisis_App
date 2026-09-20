@@ -14,6 +14,7 @@ Application collaborative de pilotage du PCA Inondations CLC. Cette version cons
 - Présence des utilisateurs connectés et journal d'audit.
 - Création de comptes depuis le panneau « Temps réel » pour le rôle Administrateur.
 - Interface historique complète : météo, terrain, actions PCA, sites, journal, cockpit et vues DG.
+- Vigilance INM officielle structurée (phénomènes, zones, validité, source et vérificateur), avec validation humaine et péremption automatique « À revalider » ; elle agit sur la posture sans modifier le score terrain.
 
 ## Démarrage local
 
