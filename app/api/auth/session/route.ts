@@ -26,7 +26,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const db = await getDb();
-    type UserRecord = Omit<AppUser, "_id"> & { _id?: ObjectId; passwordHash: string; createdAt: Date };
+    type UserRecord = Omit<AppUser, "_id"> & { _id?: ObjectId; passwordHash: string; createdAt: Date; lastLoginAt?: Date };
     const users = db.collection<UserRecord>("users");
     await users.createIndex({ email: 1 }, { unique: true });
     let user = await users.findOne({ email });
@@ -53,11 +53,16 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    if (!user || !user._id || !(await verifyPassword(password, user.passwordHash))) {
+    if (!user || !user._id || user.active === false || !(await verifyPassword(password, user.passwordHash))) {
+      await db.collection("auditLogs").insertOne({ eventType: "login_failed", ...(user?._id ? { userId: user._id } : {}), details: { email, reason: user?.active === false ? "inactive_account" : "invalid_credentials" }, at: new Date() });
       return errorResponse("E-mail ou mot de passe incorrect.", 401);
     }
     await createSession(user._id);
-    await db.collection("auditLogs").insertOne({ eventType: bootstrapped ? "first_admin_created" : "login", userId: user._id, at: new Date() });
+    const loginAt = new Date();
+    await Promise.all([
+      users.updateOne({ _id: user._id }, { $set: { lastLoginAt: loginAt } }),
+      db.collection("auditLogs").insertOne({ eventType: bootstrapped ? "first_admin_created" : "login", userId: user._id, at: loginAt }),
+    ]);
     return NextResponse.json({ authenticated: true, bootstrapped, user: publicUser(user as AppUser) });
   } catch (error) {
     return apiErrorResponse(error, "auth/session:POST");
@@ -66,7 +71,12 @@ export async function POST(request: NextRequest) {
 
 export async function DELETE() {
   try {
+    const user = await getCurrentUser();
     await destroySession();
+    if (user) {
+      const db = await getDb();
+      await db.collection("auditLogs").insertOne({ eventType: "logout", userId: user._id, at: new Date() });
+    }
     return NextResponse.json({ ok: true });
   } catch (error) {
     return apiErrorResponse(error, "auth/session:DELETE");
