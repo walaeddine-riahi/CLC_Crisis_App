@@ -14,7 +14,7 @@ Application collaborative de pilotage du PCA Inondations CLC. Cette version cons
 - Présence des utilisateurs connectés et journal d'audit.
 - Création de comptes depuis le panneau « Temps réel » pour le rôle Administrateur.
 - Interface historique complète : météo, terrain, actions PCA, sites, journal, cockpit et vues DG.
-- Vigilance INM officielle structurée (phénomènes, zones, validité, source et vérificateur), avec validation humaine et péremption automatique « À revalider » ; elle agit sur la posture sans modifier le score terrain.
+- Vigilance INM officielle récupérée automatiquement pour Nabeul toutes les 15 minutes (statut, phénomènes, période et source), avec conservation sécurisée de la dernière donnée et péremption automatique « À revalider » ; elle agit sur la posture sans modifier le score terrain.
 
 ## Démarrage local
 
@@ -43,12 +43,14 @@ Vercel détecte automatiquement Next.js. La commande de build est `npm run build
 - `public/crisis.html` : interface décisionnelle complète.
 - `public/mongo-collab.js` : synchronisation navigateur/API et mode dégradé.
 - `app/api/auth/session` : connexion, session et déconnexion.
+- `app/api/inm` : lecture serveur de la vigilance officielle INM pour Nabeul.
 - `app/api/collab/bootstrap` : chargement et initialisation du workspace.
 - `app/api/collab/section` : lecture et écriture versionnée des sections.
 - `app/api/collab/presence` : présence des utilisateurs.
 - `app/api/admin/users` : administration sécurisée des comptes et rôles.
 - `lib/mongodb.ts` : connexion mutualisée MongoDB Atlas.
 - `lib/auth.ts` : hash `scrypt`, sessions opaques et cookies sécurisés.
+- `lib/inm.ts` : extraction contrôlée du statut, des dates et des phénomènes INM.
 
 ## Sécurité
 
