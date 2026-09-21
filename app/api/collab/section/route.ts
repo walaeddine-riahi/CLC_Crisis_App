@@ -20,18 +20,23 @@ function sameJson(left: unknown, right: unknown) {
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
-function isAssignedTo(action: ActionRecord, displayName: string) {
-  const owner = typeof action.owner === "string" ? action.owner.trim().toLocaleLowerCase("fr") : "";
-  const name = displayName.trim().toLocaleLowerCase("fr");
-  return Boolean(name && owner.includes(name));
+function normalizedIdentity(value: unknown) {
+  return typeof value === "string"
+    ? value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase("fr").replace(/[^a-z0-9]+/g, " ").trim()
+    : "";
 }
 
-function isAllowedActionUpdate(previous: unknown, next: unknown, displayName: string) {
+function isAssignedTo(action: ActionRecord, identities: string[]) {
+  const owner = normalizedIdentity(action.owner);
+  return Boolean(owner && identities.some((identity) => identity.length >= 3 && (owner.includes(identity) || identity.includes(owner))));
+}
+
+function isAllowedActionUpdate(previous: unknown, next: unknown, identities: string[]) {
   if (!previous || !next || typeof previous !== "object" || typeof next !== "object" || Array.isArray(previous) || Array.isArray(next)) return false;
   const before = previous as ActionRecord;
   const after = next as ActionRecord;
   if (String(before.id ?? "") !== String(after.id ?? "")) return false;
-  if (!isAssignedTo(before, displayName)) return sameJson(before, after);
+  if (!isAssignedTo(before, identities)) return sameJson(before, after);
   const keys = new Set([...Object.keys(before), ...Object.keys(after)]);
   for (const key of keys) {
     if (!actionOwnerFields.has(key) && !sameJson(before[key], after[key])) return false;
@@ -39,18 +44,20 @@ function isAllowedActionUpdate(previous: unknown, next: unknown, displayName: st
   return true;
 }
 
-function isAllowedActionArray(previous: unknown, next: unknown, displayName: string) {
+function isAllowedActionArray(previous: unknown, next: unknown, identities: string[]) {
   if (!Array.isArray(previous) || !Array.isArray(next) || previous.length !== next.length) return false;
-  return previous.every((action, index) => isAllowedActionUpdate(action, next[index], displayName));
+  return previous.every((action, index) => isAllowedActionUpdate(action, next[index], identities));
 }
 
-function isAllowedOwnerPayload(sectionKey: string, previous: unknown, next: unknown, displayName: string) {
-  if (sectionKey === "actions") return isAllowedActionArray(previous, next, displayName);
+function isAllowedOwnerPayload(sectionKey: string, previous: unknown, next: unknown, displayName: string, entity: string) {
+  const genericEntities = new Set(["groupe", "clc", "cf", "cln", "clsb", "sbc", "sdem"]);
+  const identities = [displayName, entity].map(normalizedIdentity).filter((identity) => identity && !genericEntities.has(identity));
+  if (sectionKey === "actions") return isAllowedActionArray(previous, next, identities);
   if (sectionKey !== "simpleChecklists" || !previous || !next || typeof previous !== "object" || typeof next !== "object" || Array.isArray(previous) || Array.isArray(next)) return false;
   const before = previous as Record<string, unknown>;
   const after = next as Record<string, unknown>;
   const keys = new Set([...Object.keys(before), ...Object.keys(after)]);
-  return [...keys].every((key) => key in before && key in after && isAllowedActionArray(before[key], after[key], displayName));
+  return [...keys].every((key) => key in before && key in after && isAllowedActionArray(before[key], after[key], identities));
 }
 
 export async function GET(request: NextRequest) {
@@ -83,7 +90,7 @@ export async function PUT(request: NextRequest) {
   const sections = db.collection("sections");
   const existing = await sections.findOne({ workspaceId: workspace._id, sectionKey });
   if (!existing) return errorResponse("Section centrale absente.", 404);
-  if (user.role === "ACTION_OWNER" && sectionKey !== "journal" && !isAllowedOwnerPayload(sectionKey, existing.payload, body?.payload, user.displayName)) {
+  if (user.role === "ACTION_OWNER" && sectionKey !== "journal" && !isAllowedOwnerPayload(sectionKey, existing.payload, body?.payload, user.displayName, user.entity)) {
     return errorResponse("Vous pouvez uniquement mettre à jour l’état, l’avancement et la difficulté de vos actions affectées.", 403);
   }
   if (Number(body?.baseVersion) !== Number(existing.version)) {

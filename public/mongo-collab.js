@@ -98,6 +98,7 @@
   function showLoginForm() { els.sessionCheck.hidden = true; els.form.hidden = false; els.overlay.classList.remove('hidden'); }
   function updateIdentity() {
     window.CLC_AUTH_ROLE = profile?.role || 'VIEWER';
+    window.CLC_AUTH_ENTITY = profile?.entity || '';
     document.documentElement.dataset.authRole = window.CLC_AUTH_ROLE;
     els.user.textContent = profile?.displayName || profile?.email || '—'; els.role.textContent = ROLE_LABELS[profile?.role] || profile?.role || '—';
     els.entity.textContent = profile?.entity || 'Groupe'; els.workspace.textContent = workspace?.name || '—';
