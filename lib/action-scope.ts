@@ -4,6 +4,12 @@ export const ACTION_ENTITIES = ["CLC", "SBC", "Delta Plastic", "CF", "Boucharray
 
 export type ActionEntity = (typeof ACTION_ENTITIES)[number];
 
+export function actionReference(entity: unknown, actionId: unknown) {
+  const canonicalEntity = actionEntityFor(entity);
+  const id = String(actionId ?? "").trim();
+  return canonicalEntity && id ? `${canonicalEntity}::${id}` : "";
+}
+
 function normalize(value: unknown) {
   return typeof value === "string"
     ? value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase("fr").replace(/[^a-z0-9]+/g, " ").trim()
@@ -43,18 +49,35 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
-function visibleActions(payload: unknown, role: Role, displayName: unknown, entity: unknown) {
-  if (!Array.isArray(payload)) return [];
-  return role === "ACTION_OWNER" ? payload.filter((action) => actionIsAssignedTo(action, displayName, entity)) : payload;
+function accessSet(actionAccess: unknown) {
+  return new Set(Array.isArray(actionAccess) ? actionAccess.filter((item): item is string => typeof item === "string") : []);
 }
 
-export function scopeActionPayload(sectionKey: string, payload: unknown, role: Role, entity: unknown, displayName?: unknown) {
+function visibleActions(payload: unknown, payloadEntity: ActionEntity, role: Role, displayName: unknown, entity: unknown, actionAccess: unknown) {
+  if (!Array.isArray(payload)) return [];
+  const ownEntity = actionEntityFor(entity);
+  const grants = accessSet(actionAccess);
+  return payload.filter((action) => {
+    const granted = isRecord(action) && grants.has(actionReference(payloadEntity, action.id));
+    if (granted) return true;
+    if (payloadEntity !== ownEntity) return false;
+    return role !== "ACTION_OWNER" || actionIsAssignedTo(action, displayName, entity);
+  });
+}
+
+export function scopeActionPayload(sectionKey: string, payload: unknown, role: Role, entity: unknown, displayName?: unknown, actionAccess?: unknown) {
   if (role === "ADMIN") return payload;
   const actionEntity = actionEntityFor(entity);
-  if (sectionKey === "actions") return actionEntity === "CLC" ? visibleActions(payload, role, displayName, entity) : [];
+  if (sectionKey === "actions") return visibleActions(payload, "CLC", role, displayName, entity, actionAccess);
   if (sectionKey === "simpleChecklists") {
-    if (!actionEntity || actionEntity === "CLC" || !isRecord(payload)) return {};
-    return { [actionEntity]: visibleActions(payload[actionEntity], role, displayName, entity) };
+    if (!isRecord(payload)) return {};
+    const scoped: Record<string, unknown> = {};
+    for (const candidate of ACTION_ENTITIES) {
+      if (candidate === "CLC") continue;
+      const rows = visibleActions(payload[candidate], candidate, role, displayName, entity, actionAccess);
+      if (rows.length || candidate === actionEntity) scoped[candidate] = rows;
+    }
+    return scoped;
   }
   return payload;
 }

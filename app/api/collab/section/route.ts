@@ -74,7 +74,7 @@ export async function GET(request: NextRequest) {
   }
   const db = await getDb();
   const rows = await db.collection("sections").find(query).sort({ updatedAt: 1 }).toArray();
-  return NextResponse.json({ serverTime: new Date().toISOString(), sections: rows.map((row) => ({ sectionKey: row.sectionKey, payload: scopeActionPayload(row.sectionKey, row.payload, user.role, user.entity, user.displayName), version: row.version, updatedAt: row.updatedAt, updatedBy: row.updatedBy?.toString() })) }, { headers: { "Cache-Control": "no-store" } });
+  return NextResponse.json({ serverTime: new Date().toISOString(), sections: rows.map((row) => ({ sectionKey: row.sectionKey, payload: scopeActionPayload(row.sectionKey, row.payload, user.role, user.entity, user.displayName, user.actionAccess), version: row.version, updatedAt: row.updatedAt, updatedBy: row.updatedBy?.toString() })) }, { headers: { "Cache-Control": "no-store" } });
 }
 
 export async function PUT(request: NextRequest) {
@@ -92,7 +92,7 @@ export async function PUT(request: NextRequest) {
   const sections = db.collection("sections");
   const existing = await sections.findOne({ workspaceId: workspace._id, sectionKey });
   if (!existing) return errorResponse("Section centrale absente.", 404);
-  const previousPayload = scopeActionPayload(sectionKey, existing.payload, user.role, user.entity, user.displayName);
+  const previousPayload = scopeActionPayload(sectionKey, existing.payload, user.role, user.entity, user.displayName, user.actionAccess);
   if (user.role === "ACTION_OWNER" && sectionKey !== "journal" && !isAllowedOwnerPayload(sectionKey, previousPayload, body?.payload, user.displayName, user.entity)) {
     return errorResponse("Vous pouvez uniquement mettre à jour l’état, l’avancement et la difficulté de vos actions affectées.", 403);
   }
@@ -109,8 +109,8 @@ export async function PUT(request: NextRequest) {
   );
   if (!result) {
     const current = await sections.findOne({ _id: existing._id });
-    return errorResponse("Conflit de version.", 409, current ? { current: { sectionKey, payload: scopeActionPayload(sectionKey, current.payload, user.role, user.entity, user.displayName), version: current.version, updatedAt: current.updatedAt } } : undefined);
+    return errorResponse("Conflit de version.", 409, current ? { current: { sectionKey, payload: scopeActionPayload(sectionKey, current.payload, user.role, user.entity, user.displayName, user.actionAccess), version: current.version, updatedAt: current.updatedAt } } : undefined);
   }
   await db.collection("auditLogs").insertOne({ workspaceId: workspace._id, userId: user._id, eventType: "section_update", sectionKey, details: { version: nextVersion, role: user.role, entity: user.entity }, at: now });
-  return NextResponse.json({ sectionKey, payload: scopeActionPayload(sectionKey, result.payload, user.role, user.entity, user.displayName), version: result.version, updatedAt: result.updatedAt });
+  return NextResponse.json({ sectionKey, payload: scopeActionPayload(sectionKey, result.payload, user.role, user.entity, user.displayName, user.actionAccess), version: result.version, updatedAt: result.updatedAt });
 }

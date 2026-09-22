@@ -5,7 +5,7 @@ import { apiErrorResponse } from "@/lib/api-errors";
 import { errorResponse } from "@/lib/http";
 import { getDb } from "@/lib/mongodb";
 import { ROLES, type Role } from "@/lib/roles";
-import { actionEntityFor } from "@/lib/action-scope";
+import { actionEntityFor, actionReference, ACTION_ENTITIES } from "@/lib/action-scope";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,18 +15,56 @@ async function requireAdmin() {
   return user?.role === "ADMIN" ? user : null;
 }
 
+type ActionCatalogItem = { ref: string; entity: string; id: string; label: string; owner: string };
+
+function record(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
+
+async function loadActionCatalog(db: Awaited<ReturnType<typeof getDb>>): Promise<ActionCatalogItem[]> {
+  const workspace = await db.collection("workspaces").findOne({ code: process.env.CLC_WORKSPACE_CODE || "DELICE-INONDATIONS", isActive: true });
+  if (!workspace) return [];
+  const sections = await db.collection("sections").find({ workspaceId: workspace._id, sectionKey: { $in: ["actions", "simpleChecklists"] } }).toArray();
+  const catalog: ActionCatalogItem[] = [];
+  const add = (entity: string, action: unknown) => {
+    const item = record(action);
+    const id = String(item?.id ?? "").trim();
+    const ref = actionReference(entity, id);
+    if (!item || !ref) return;
+    catalog.push({ ref, entity, id, label: String(item.object || item.action || `Action ${id}`), owner: String(item.owner || "Non affecté") });
+  };
+  for (const section of sections) {
+    if (section.sectionKey === "actions" && Array.isArray(section.payload)) section.payload.forEach((action) => add("CLC", action));
+    if (section.sectionKey === "simpleChecklists") {
+      const byEntity = record(section.payload);
+      for (const entity of ACTION_ENTITIES) {
+        if (entity !== "CLC" && Array.isArray(byEntity?.[entity])) (byEntity[entity] as unknown[]).forEach((action) => add(entity, action));
+      }
+    }
+  }
+  return catalog.sort((left, right) => left.entity.localeCompare(right.entity, "fr") || left.label.localeCompare(right.label, "fr"));
+}
+
+function validatedActionAccess(value: unknown, catalog: ActionCatalogItem[]) {
+  if (!Array.isArray(value) || value.length > 250) return null;
+  const allowed = new Set(catalog.map((item) => item.ref));
+  const selected = [...new Set(value.filter((item): item is string => typeof item === "string"))];
+  return selected.every((item) => allowed.has(item)) ? selected : null;
+}
+
 export async function GET() {
   try {
     const admin = await requireAdmin();
     if (!admin) return errorResponse("Accès administrateur requis.", 403);
     const db = await getDb();
     const now = new Date();
-    const [users, sessions] = await Promise.all([
+    const [users, sessions, actionCatalog] = await Promise.all([
       db.collection("users").find({}, { projection: { passwordHash: 0 } }).sort({ displayName: 1 }).toArray(),
       db.collection("sessions").find(
         { expiresAt: { $gt: now }, userId: { $exists: true } },
         { projection: { userId: 1 } },
       ).toArray(),
+      loadActionCatalog(db),
     ]);
     const sessionCounts = new Map<string, number>();
     for (const session of sessions) {
@@ -39,10 +77,10 @@ export async function GET() {
       roles: ROLES,
       users: users.map((user) => ({
         id: user._id.toString(), email: user.email, displayName: user.displayName, role: user.role,
-        entity: user.entity || "Groupe", active: user.active !== false, createdAt: user.createdAt || null,
+        entity: user.entity || "Groupe", actionAccess: Array.isArray(user.actionAccess) ? user.actionAccess : [], active: user.active !== false, createdAt: user.createdAt || null,
         updatedAt: user.updatedAt || null, lastLoginAt: user.lastLoginAt || null,
         activeSessions: sessionCounts.get(user._id.toString()) || 0,
-      })),
+      })), actionCatalog,
     }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     return apiErrorResponse(error, "admin/users:GET");
@@ -52,7 +90,7 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   const admin = await requireAdmin();
   if (!admin) return errorResponse("Accès administrateur requis.", 403);
-  const body = await request.json().catch(() => null) as { email?: string; password?: string; displayName?: string; role?: Role; entity?: string } | null;
+  const body = await request.json().catch(() => null) as { email?: string; password?: string; displayName?: string; role?: Role; entity?: string; actionAccess?: string[] } | null;
   const email = body?.email?.trim().toLowerCase() || "";
   const password = body?.password || "";
   const displayName = body?.displayName?.trim() || "";
@@ -67,8 +105,10 @@ export async function POST(request: NextRequest) {
     const requestedEntity = body?.entity?.trim() || "";
     const entity = role === "ADMIN" ? (requestedEntity || "Groupe") : actionEntityFor(requestedEntity);
     if (!entity) return errorResponse("Attribuez une entité valide à ce compte.");
-    const result = await db.collection("users").insertOne({ email, passwordHash: await hashPassword(password), displayName, role, entity, active: true, createdAt: now, createdBy: admin._id });
-    await db.collection("auditLogs").insertOne({ eventType: "user_created", userId: admin._id, targetUserId: result.insertedId, details: { email, displayName, role, entity }, at: now });
+    const actionAccess = validatedActionAccess(body?.actionAccess ?? [], await loadActionCatalog(db));
+    if (!actionAccess) return errorResponse("La liste des accès supplémentaires contient une action invalide.");
+    const result = await db.collection("users").insertOne({ email, passwordHash: await hashPassword(password), displayName, role, entity, actionAccess, active: true, createdAt: now, createdBy: admin._id });
+    await db.collection("auditLogs").insertOne({ eventType: "user_created", userId: admin._id, targetUserId: result.insertedId, details: { email, displayName, role, entity, additionalActionAccess: actionAccess.length }, at: now });
     return NextResponse.json({ id: result.insertedId.toString(), email, displayName, role }, { status: 201 });
   } catch (error) {
     if ((error as { code?: number }).code === 11000) return errorResponse("Un compte utilise déjà cette adresse e-mail.", 409);
@@ -79,7 +119,7 @@ export async function POST(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   const admin = await requireAdmin();
   if (!admin) return errorResponse("Accès administrateur requis.", 403);
-  const body = await request.json().catch(() => null) as { id?: string; displayName?: string; role?: Role; entity?: string; active?: boolean; password?: string; revokeSessions?: boolean } | null;
+  const body = await request.json().catch(() => null) as { id?: string; displayName?: string; role?: Role; entity?: string; actionAccess?: string[]; active?: boolean; password?: string; revokeSessions?: boolean } | null;
   if (!body?.id || !ObjectId.isValid(body.id)) return errorResponse("Identifiant utilisateur invalide.");
   const targetId = new ObjectId(body.id);
   const isSelf = targetId.equals(admin._id);
@@ -113,12 +153,18 @@ export async function PATCH(request: NextRequest) {
       if (!ROLES.includes(body.role)) return errorResponse("Rôle invalide.");
       if (body.role !== target.role) { updates.role = body.role; changed.push("role"); }
     }
+    if (body.actionAccess !== undefined) {
+      const actionAccess = validatedActionAccess(body.actionAccess, await loadActionCatalog(db));
+      if (!actionAccess) return errorResponse("La liste des accès supplémentaires contient une action invalide.");
+      const previous = Array.isArray(target.actionAccess) ? target.actionAccess : [];
+      if (JSON.stringify([...previous].sort()) !== JSON.stringify([...actionAccess].sort())) { updates.actionAccess = actionAccess; changed.push("actionAccess"); }
+    }
     if (body.password !== undefined) {
       if (body.password.length < 10) return errorResponse("Le mot de passe doit contenir au moins 10 caractères.");
       updates.passwordHash = await hashPassword(body.password); changed.push("password");
     }
     if (changed.length) await users.updateOne({ _id: targetId }, { $set: updates });
-    const revokeSessions = body.revokeSessions === true || body.active === false || body.password !== undefined || changed.includes("role") || changed.includes("entity");
+    const revokeSessions = body.revokeSessions === true || body.active === false || body.password !== undefined || changed.includes("role") || changed.includes("entity") || changed.includes("actionAccess");
     if (revokeSessions) await db.collection("sessions").deleteMany({ userId: targetId });
     await db.collection("auditLogs").insertOne({ eventType: revokeSessions && !changed.length ? "sessions_revoked" : "user_updated", userId: admin._id, targetUserId: targetId, details: { fields: changed, revokedSessions: revokeSessions, targetEmail: target.email }, at: new Date() });
     return NextResponse.json({ ok: true, revokedSessions: revokeSessions });

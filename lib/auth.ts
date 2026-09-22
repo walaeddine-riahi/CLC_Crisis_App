@@ -16,6 +16,7 @@ export type AppUser = {
   displayName: string;
   role: Role;
   entity: string;
+  actionAccess?: string[];
   active: boolean;
 };
 
@@ -69,5 +70,5 @@ export async function getCurrentUser(): Promise<AppUser | null> {
 }
 
 export function publicUser(user: AppUser) {
-  return { id: user._id.toHexString(), email: user.email, displayName: user.displayName, role: user.role, entity: user.entity };
+  return { id: user._id.toHexString(), email: user.email, displayName: user.displayName, role: user.role, entity: user.entity, actionAccess: Array.isArray(user.actionAccess) ? user.actionAccess : [] };
 }
