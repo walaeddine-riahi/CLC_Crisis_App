@@ -4,7 +4,16 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
   <meta name="theme-color" content="#003ba5" />
-  <title>Groupe Délice — Pilotage Inondations V4.0 — Next.js + MongoDB</title>
+  <meta name="application-name" content="CLC Crisis" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="CLC Crisis" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="format-detection" content="telephone=no" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png" />
+  <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png" />
+  <title>CLC Crisis — Groupe Délice</title>
   
   <style>
 :root{
@@ -427,6 +436,62 @@ img,svg{max-width:100%}
 }
 </style>
 
+<style id="mobile-app-v1">
+/* Expérience application mobile iOS / Android */
+html{background:#003ba5}
+body{min-height:100dvh;padding-top:env(safe-area-inset-top);padding-left:env(safe-area-inset-left);padding-right:env(safe-area-inset-right)}
+button,a,input,select,textarea{-webkit-tap-highlight-color:transparent}
+button,a{touch-action:manipulation}
+.mobile-install-btn{display:none}
+.mobile-install-btn.ready{display:inline-flex;align-items:center;justify-content:center;gap:7px}
+.mobile-install-note{position:fixed;left:50%;bottom:calc(18px + env(safe-area-inset-bottom));transform:translateX(-50%) translateY(130%);z-index:300;width:min(440px,calc(100vw - 24px));padding:12px 14px;border-radius:14px;background:#102f5e;color:#fff;box-shadow:0 18px 50px rgba(4,22,50,.3);font-size:12px;line-height:1.45;opacity:0;pointer-events:none;transition:.24s ease}
+.mobile-install-note.show{transform:translateX(-50%) translateY(0);opacity:1;pointer-events:auto}
+.mobile-install-note b{display:block;margin-bottom:3px}
+.mobile-install-note button{float:right;margin-left:10px;border:1px solid rgba(255,255,255,.35);border-radius:8px;background:transparent;color:#fff;padding:5px 8px}
+.pwa-update{position:fixed;z-index:310;left:50%;bottom:calc(18px + env(safe-area-inset-bottom));transform:translateX(-50%);display:none;align-items:center;gap:10px;width:min(460px,calc(100vw - 24px));padding:11px 12px;border-radius:14px;background:#fff;color:#17375e;border:1px solid #cbd9e8;box-shadow:0 18px 50px rgba(4,22,50,.22);font-size:12px;font-weight:750}
+.pwa-update.show{display:flex}.pwa-update button{margin-left:auto;border:0;border-radius:9px;background:#003ba5;color:#fff;padding:8px 10px;font-weight:850}
+
+@media(max-width:700px){
+  body{background:#edf3fb}
+  .app-header{padding-top:calc(12px + env(safe-area-inset-top));margin-top:calc(-1 * env(safe-area-inset-top))}
+  .v17-shell{padding:0 10px calc(88px + env(safe-area-inset-bottom))!important}
+  .v17-toolbar{display:grid;grid-template-columns:1fr 1fr;gap:7px;padding:9px 0}
+  .v17-toolbar label{display:grid;gap:4px;min-width:0;font-size:10px}
+  .v17-toolbar select,.v17-toolbar input{width:100%;min-width:0;min-height:42px;padding:8px}
+  .v17-toolbar .spacer{display:none}
+  .v17-toolbar>.v17-pill{grid-column:1/-1;text-align:center}
+  .v17-toolbar>.v17-btn{min-height:44px;padding:8px 9px}
+  .v17-toolbar>.mobile-install-btn{grid-column:1/-1}
+  .v17-nav{
+    position:fixed!important;left:0;right:0;bottom:0;top:auto;z-index:180;
+    display:flex;flex-wrap:nowrap;gap:3px;overflow-x:auto;overscroll-behavior-x:contain;
+    padding:6px max(7px,env(safe-area-inset-right)) calc(6px + env(safe-area-inset-bottom)) max(7px,env(safe-area-inset-left));
+    border:0;border-top:1px solid #d5e0ec;border-radius:0;background:rgba(255,255,255,.97);
+    box-shadow:0 -8px 28px rgba(15,35,55,.12);scrollbar-width:none;-webkit-overflow-scrolling:touch
+  }
+  .v17-nav::-webkit-scrollbar{display:none}
+  .v17-nav button{flex:0 0 82px;min-height:52px;padding:7px 5px!important;border-radius:11px;font-size:10px;line-height:1.15;scroll-snap-align:center}
+  .v17-nav button.active{background:#003ba5;color:#fff;box-shadow:0 5px 14px rgba(0,59,165,.2)}
+  .v17-main{padding-top:4px}
+  .v17-view{animation:mobileViewIn .18s ease-out}
+  .v17-card,.v18-panel,.v18-side{border-radius:14px}
+  .v17-btn,.v17-mini,.v17-close{min-height:44px}
+  input,select,textarea{font-size:16px!important}
+  .v17-modal{align-items:flex-end;padding:0}
+  .v17-modal-box{width:100%;max-width:none;max-height:92dvh;border-radius:20px 20px 0 0;padding-bottom:calc(16px + env(safe-area-inset-bottom))}
+  .v17-modal-head{position:sticky;top:0;z-index:2;background:#fff;padding-top:4px}
+  .collab-panel{bottom:calc(72px + env(safe-area-inset-bottom))!important;max-height:68dvh!important}
+  .collab-fab{bottom:calc(78px + env(safe-area-inset-bottom))!important}
+  .mobile-install-note,.pwa-update{bottom:calc(78px + env(safe-area-inset-bottom))}
+  .collab-login-overlay{padding:calc(12px + env(safe-area-inset-top)) 12px calc(12px + env(safe-area-inset-bottom))}
+  .collab-login-card{width:100%;max-height:calc(100dvh - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom));overflow:auto;border-radius:18px}
+}
+@media(max-width:390px){.v17-toolbar{grid-template-columns:1fr}.v17-toolbar>.v17-pill,.v17-toolbar>.mobile-install-btn{grid-column:auto}.v17-nav button{flex-basis:76px}}
+@media(display-mode:standalone){.mobile-install-btn{display:none!important}.app-header{user-select:none}}
+@keyframes mobileViewIn{from{opacity:.55;transform:translateY(4px)}to{opacity:1;transform:none}}
+@media(prefers-reduced-motion:reduce){.v17-view,.mobile-install-note,.pwa-update{animation:none;transition:none}}
+</style>
+
 </head>
 <body>
 
@@ -498,6 +563,7 @@ img,svg{max-width:100%}
     <span id="v17Sync" class="v17-pill gray">Données locales</span>
     <button class="v17-btn" id="v20AlertsBtn">Alertes <span id="v20AlertCount" class="v20-count">0</span></button>
     <button class="v17-btn" id="v17RefreshWeather">Actualiser météo</button>
+    <button class="v17-btn mobile-install-btn" id="mobileInstallBtn" type="button">Installer l’application</button>
   </div>
   <nav class="v17-nav" aria-label="Navigation opérationnelle">
     <button class="active" data-v17="situation">Situation</button>
@@ -531,6 +597,9 @@ img,svg{max-width:100%}
     <div id="v20AlertsContent"></div>
   </div>
 </div>
+
+<div class="mobile-install-note" id="mobileInstallNote" role="status" aria-live="polite"></div>
+<div class="pwa-update" id="pwaUpdate" role="status"><span>Une nouvelle version est disponible.</span><button id="pwaUpdateBtn" type="button">Mettre à jour</button></div>
 
 
 
@@ -1982,7 +2051,34 @@ Décisions / validations : ${dgDecisionItems().map(x=>x.title).join(' | ')}`;
 
   // Header clock / PWA
   setInterval(()=>{document.getElementById('clock').textContent=new Date().toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});},1000);
-  if('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('./service-worker.js').catch(()=>{});
+  // Installation iOS / Android et mises à jour contrôlées de l’application.
+  (()=>{
+    const installBtn=document.getElementById('mobileInstallBtn');
+    const installNote=document.getElementById('mobileInstallNote');
+    const updateBox=document.getElementById('pwaUpdate');
+    const updateBtn=document.getElementById('pwaUpdateBtn');
+    let installPrompt=null;
+    const standalone=window.matchMedia('(display-mode: standalone)').matches||window.navigator.standalone===true;
+    const isIos=/iphone|ipad|ipod/i.test(navigator.userAgent);
+    const showNote=(html,delay=9000)=>{if(!installNote)return;installNote.innerHTML=`<button type="button" aria-label="Fermer">Fermer</button>${html}`;installNote.classList.add('show');installNote.querySelector('button').onclick=()=>installNote.classList.remove('show');setTimeout(()=>installNote.classList.remove('show'),delay)};
+    window.addEventListener('beforeinstallprompt',event=>{event.preventDefault();installPrompt=event;installBtn?.classList.add('ready')});
+    window.addEventListener('appinstalled',()=>{installPrompt=null;installBtn?.classList.remove('ready');showNote('<b>Application installée</b>CLC Crisis est maintenant disponible sur votre écran d’accueil.',5000)});
+    installBtn?.addEventListener('click',async()=>{
+      if(installPrompt){installPrompt.prompt();await installPrompt.userChoice;installPrompt=null;installBtn.classList.remove('ready');return}
+      if(isIos&&!standalone){showNote('<b>Installation sur iPhone / iPad</b>Dans Safari, touchez Partager puis « Sur l’écran d’accueil ».');return}
+      showNote('<b>Installation</b>Ouvrez le menu du navigateur puis choisissez « Installer l’application » ou « Ajouter à l’écran d’accueil ».');
+    });
+    if(isIos&&!standalone) installBtn?.classList.add('ready');
+    if('serviceWorker' in navigator&&location.protocol.startsWith('http')){
+      navigator.serviceWorker.register('/service-worker.js',{scope:'/'}).then(reg=>{
+        const offerUpdate=()=>updateBox?.classList.add('show');
+        if(reg.waiting) offerUpdate();
+        reg.addEventListener('updatefound',()=>{const worker=reg.installing;if(!worker)return;worker.addEventListener('statechange',()=>{if(worker.state==='installed'&&navigator.serviceWorker.controller)offerUpdate()})});
+        updateBtn?.addEventListener('click',()=>{reg.waiting?.postMessage({type:'SKIP_WAITING'})});
+      }).catch(()=>{});
+      let refreshing=false;navigator.serviceWorker.addEventListener('controllerchange',()=>{if(refreshing)return;refreshing=true;location.reload()});
+    }
+  })();
 
 
   // ========================= V1.8 — Pilotage opérationnel =========================
@@ -2253,7 +2349,7 @@ Actions critiques ouvertes : ${critical.length}
 Prochaine revue : ${state.crisis?.nextReview||'À définir'}`;
   }
 
-  function v17SetPage(name){document.querySelectorAll('.v17-view').forEach(v=>v.classList.toggle('active',v.id===`v17-${name}`));document.querySelectorAll('.v17-nav button[data-v17]').forEach(b=>b.classList.toggle('active',b.dataset.v17===name));v17Render();}
+  function v17SetPage(name){document.querySelectorAll('.v17-view').forEach(v=>v.classList.toggle('active',v.id===`v17-${name}`));document.querySelectorAll('.v17-nav button[data-v17]').forEach(b=>{const active=b.dataset.v17===name;b.classList.toggle('active',active);if(active&&window.innerWidth<=700)b.scrollIntoView({behavior:'smooth',block:'nearest',inline:'center'});});v17Render();window.scrollTo({top:0,behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});}
   function v17Render(){v17Ensure();v17RenderRole();v17RenderSituation();v18RenderMeteoHydro();v17RenderDecision();v17RenderActions();v17RenderSites();v20RenderMeeting();v17RenderJournal();v20AuditTransitions();v20RenderAlertBadge();}
   function v17RenderRole(){
     const role=document.getElementById('v17Role'),name=document.getElementById('v17UserName');if(role){role.value=state.profile.role;role.disabled=true;role.title='Rôle attribué par un administrateur';}if(name){name.value=state.profile.name||'';name.disabled=true;}const refresh=document.getElementById('v17RefreshWeather');if(refresh)refresh.disabled=!v17CanUpdateWeather();
@@ -2467,6 +2563,8 @@ Prochaine revue : ${state.crisis?.nextReview||'À définir'}`;
   v17Ensure();
   v17Bind();
   v17Render();
+  const mobileStartPage=new URLSearchParams(location.search).get('mobile');
+  if(['situation','meteo','decision','actions','sites','meeting','journal'].includes(mobileStartPage)) v17SetPage(mobileStartPage);
   setInterval(v17Render,30000);
   loadGeo();
   if(!state.autoWeather?.updated || minutesSince(state.autoWeather.updated)>15) refreshAutoWeather(true); else renderAutoWeather();

@@ -40,6 +40,20 @@ Dans MongoDB Atlas, autoriser les connexions depuis Vercel dans **Network Access
 
 Vercel détecte automatiquement Next.js. La commande de build est `npm run build`.
 
+## Application mobile iOS et Android
+
+La plateforme est installable comme PWA depuis Safari et Chrome. Elle comprend un manifeste, des icônes dédiées, un service worker limité aux ressources statiques, une navigation tactile et la prise en charge des zones sûres iOS. Les routes `/api` ne sont jamais mises en cache.
+
+Les projets natifs Capacitor utilisent l’application Vercel comme source sécurisée unique afin de conserver l’authentification, MongoDB et les mises à jour métier :
+
+```bash
+npm run mobile:sync
+npm run mobile:android   # Android Studio
+npm run mobile:ios       # Xcode, sur macOS
+```
+
+Avant publication, remplacer l’URL `server.url` de `capacitor.config.ts` par le domaine de production définitif, configurer les certificats et profils de signature, puis compléter les fiches App Store Connect et Google Play Console. Une connexion Internet reste nécessaire pour l’authentification et la synchronisation centrale ; l’interface statique seule dispose d’un repli hors ligne.
+
 ## Architecture
 
 - `public/crisis.html` : interface décisionnelle complète.
