@@ -1,4 +1,4 @@
-package com.grss.clccrisis;
+package com.grss.floodcrisis;
 
 import com.getcapacitor.BridgeActivity;
 

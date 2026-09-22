@@ -2,14 +2,14 @@ import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
 
 export const metadata: Metadata = {
-  title: "CLC Crisis — Groupe Délice",
-  description: "Pilotage collaboratif du PCA inondations CLC",
-  applicationName: "CLC Crisis",
+  title: "Flood Crisis Management — Groupe Délice",
+  description: "Pilotage collaboratif de la préparation, de la réponse et de la reprise face aux inondations",
+  applicationName: "Flood Crisis Management",
   manifest: "/manifest.webmanifest",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "CLC Crisis",
+    title: "Flood Crisis Management",
   },
   icons: {
     icon: [

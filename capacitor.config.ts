@@ -1,8 +1,8 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
-  appId: 'com.grss.clccrisis',
-  appName: 'CLC Crisis',
+  appId: 'com.grss.floodcrisis',
+  appName: 'Flood Crisis Management',
   webDir: 'mobile-shell',
   server: {
     url: 'https://clc-crisis-app-q7vf.vercel.app',

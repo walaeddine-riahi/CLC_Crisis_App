@@ -1,6 +1,6 @@
-# CLC Crisis App V4.0 — Next.js + MongoDB
+# Flood Crisis Management — Next.js + MongoDB
 
-Application collaborative de pilotage du PCA Inondations CLC. Cette version conserve le cockpit décisionnel V3.0.2 et remplace Supabase par une API Next.js sécurisée connectée à MongoDB Atlas.
+Application collaborative de préparation, de réponse et de reprise face aux inondations. Elle intègre le cockpit décisionnel du PCA Inondations CLC et une API Next.js sécurisée connectée à MongoDB Atlas.
 
 ## Fonctionnalités dynamiques
 

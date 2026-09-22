@@ -1,9 +1,10 @@
-const CACHE_VERSION = 'clc-crisis-shell-v1';
+const CACHE_VERSION = 'flood-crisis-management-shell-v2';
 const APP_SHELL = [
   '/',
   '/crisis.html',
   '/mongo-collab.js?v=4.1.0',
   '/manifest.webmanifest',
+  '/branding/flood-crisis-management-logo.png',
   '/icons/icon-192.png',
   '/icons/icon-512.png',
   '/icons/apple-touch-icon.png'

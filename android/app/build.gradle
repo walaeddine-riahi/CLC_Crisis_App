@@ -1,10 +1,10 @@
 apply plugin: 'com.android.application'
 
 android {
-    namespace "com.grss.clccrisis"
+    namespace "com.grss.floodcrisis"
     compileSdk rootProject.ext.compileSdkVersion
     defaultConfig {
-        applicationId "com.grss.clccrisis"
+        applicationId "com.grss.floodcrisis"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
