@@ -3,6 +3,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { errorResponse, safeJsonSize } from "@/lib/http";
 import { getDb } from "@/lib/mongodb";
 import { canWrite } from "@/lib/roles";
+import { canAccessActionSection, mergeScopedActionPayload, scopeActionPayload } from "@/lib/action-scope";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -73,7 +74,7 @@ export async function GET(request: NextRequest) {
   }
   const db = await getDb();
   const rows = await db.collection("sections").find(query).sort({ updatedAt: 1 }).toArray();
-  return NextResponse.json({ serverTime: new Date().toISOString(), sections: rows.map((row) => ({ sectionKey: row.sectionKey, payload: row.payload, version: row.version, updatedAt: row.updatedAt, updatedBy: row.updatedBy?.toString() })) }, { headers: { "Cache-Control": "no-store" } });
+  return NextResponse.json({ serverTime: new Date().toISOString(), sections: rows.map((row) => ({ sectionKey: row.sectionKey, payload: scopeActionPayload(row.sectionKey, row.payload, user.role, user.entity, user.displayName), version: row.version, updatedAt: row.updatedAt, updatedBy: row.updatedBy?.toString() })) }, { headers: { "Cache-Control": "no-store" } });
 }
 
 export async function PUT(request: NextRequest) {
@@ -83,6 +84,7 @@ export async function PUT(request: NextRequest) {
   const sectionKey = body?.sectionKey?.trim() || "";
   if (!/^[A-Za-z0-9_-]{1,80}$/.test(sectionKey)) return errorResponse("Clé de section invalide.");
   if (!canWrite(user.role, sectionKey)) return errorResponse(`Votre rôle ne permet pas de modifier « ${sectionKey} ».`, 403);
+  if (!canAccessActionSection(sectionKey, user.role, user.entity)) return errorResponse("Vous pouvez uniquement gérer les actions de votre entité.", 403);
   if (!safeJsonSize(body?.payload)) return errorResponse("Section trop volumineuse.", 413);
   const workspace = await currentWorkspace();
   if (!workspace) return errorResponse("Workspace introuvable.", 404);
@@ -90,20 +92,25 @@ export async function PUT(request: NextRequest) {
   const sections = db.collection("sections");
   const existing = await sections.findOne({ workspaceId: workspace._id, sectionKey });
   if (!existing) return errorResponse("Section centrale absente.", 404);
-  if (user.role === "ACTION_OWNER" && sectionKey !== "journal" && !isAllowedOwnerPayload(sectionKey, existing.payload, body?.payload, user.displayName, user.entity)) {
+  const previousPayload = scopeActionPayload(sectionKey, existing.payload, user.role, user.entity, user.displayName);
+  if (user.role === "ACTION_OWNER" && sectionKey !== "journal" && !isAllowedOwnerPayload(sectionKey, previousPayload, body?.payload, user.displayName, user.entity)) {
     return errorResponse("Vous pouvez uniquement mettre à jour l’état, l’avancement et la difficulté de vos actions affectées.", 403);
   }
   if (Number(body?.baseVersion) !== Number(existing.version)) {
-    return errorResponse("Conflit de version.", 409, { current: { sectionKey, payload: existing.payload, version: existing.version, updatedAt: existing.updatedAt } });
+    return errorResponse("Conflit de version.", 409, { current: { sectionKey, payload: previousPayload, version: existing.version, updatedAt: existing.updatedAt } });
   }
   const now = new Date();
   const nextVersion = Number(existing.version) + 1;
+  const nextPayload = mergeScopedActionPayload(sectionKey, existing.payload, body?.payload, user.role, user.entity);
   const result = await sections.findOneAndUpdate(
     { _id: existing._id, version: existing.version },
-    { $set: { payload: body?.payload, version: nextVersion, updatedAt: now, updatedBy: user._id } },
+    { $set: { payload: nextPayload, version: nextVersion, updatedAt: now, updatedBy: user._id } },
     { returnDocument: "after" },
   );
-  if (!result) return errorResponse("Conflit de version.", 409);
+  if (!result) {
+    const current = await sections.findOne({ _id: existing._id });
+    return errorResponse("Conflit de version.", 409, current ? { current: { sectionKey, payload: scopeActionPayload(sectionKey, current.payload, user.role, user.entity, user.displayName), version: current.version, updatedAt: current.updatedAt } } : undefined);
+  }
   await db.collection("auditLogs").insertOne({ workspaceId: workspace._id, userId: user._id, eventType: "section_update", sectionKey, details: { version: nextVersion, role: user.role, entity: user.entity }, at: now });
-  return NextResponse.json({ sectionKey, payload: result.payload, version: result.version, updatedAt: result.updatedAt });
+  return NextResponse.json({ sectionKey, payload: scopeActionPayload(sectionKey, result.payload, user.role, user.entity, user.displayName), version: result.version, updatedAt: result.updatedAt });
 }

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser, publicUser } from "@/lib/auth";
 import { errorResponse, safeJsonSize } from "@/lib/http";
 import { getDb } from "@/lib/mongodb";
+import { scopeActionPayload } from "@/lib/action-scope";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -29,14 +30,14 @@ export async function GET() {
   return NextResponse.json({
     user: publicUser(user),
     workspace: { id: workspace._id.toString(), code: workspace.code, name: workspace.name },
-    sections: rows.map((row) => ({ sectionKey: row.sectionKey, payload: row.payload, version: row.version, updatedAt: row.updatedAt, updatedBy: row.updatedBy?.toString() })),
+    sections: rows.map((row) => ({ sectionKey: row.sectionKey, payload: scopeActionPayload(row.sectionKey, row.payload, user.role, user.entity, user.displayName), version: row.version, updatedAt: row.updatedAt, updatedBy: row.updatedBy?.toString() })),
   }, { headers: { "Cache-Control": "no-store" } });
 }
 
 export async function POST(request: NextRequest) {
   const user = await getCurrentUser();
   if (!user) return errorResponse("Authentification requise.", 401);
-  if (!["ADMIN", "GROUP_CRISIS"].includes(user.role)) return errorResponse("Seule la Cellule Groupe peut initialiser la situation.", 403);
+  if (user.role !== "ADMIN") return errorResponse("Seul un administrateur peut initialiser la situation.", 403);
   const body = await request.json().catch(() => null) as { initialState?: Record<string, unknown> } | null;
   if (!body?.initialState || typeof body.initialState !== "object" || !safeJsonSize(body.initialState)) return errorResponse("État initial invalide ou trop volumineux.");
   const workspace = await ensureWorkspace();

@@ -5,6 +5,7 @@ import { apiErrorResponse } from "@/lib/api-errors";
 import { errorResponse } from "@/lib/http";
 import { getDb } from "@/lib/mongodb";
 import { ROLES, type Role } from "@/lib/roles";
+import { actionEntityFor } from "@/lib/action-scope";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -63,7 +64,9 @@ export async function POST(request: NextRequest) {
   try {
     const db = await getDb();
     const now = new Date();
-    const entity = body?.entity?.trim() || "Groupe";
+    const requestedEntity = body?.entity?.trim() || "";
+    const entity = role === "ADMIN" ? (requestedEntity || "Groupe") : actionEntityFor(requestedEntity);
+    if (!entity) return errorResponse("Attribuez une entité valide à ce compte.");
     const result = await db.collection("users").insertOne({ email, passwordHash: await hashPassword(password), displayName, role, entity, active: true, createdAt: now, createdBy: admin._id });
     await db.collection("auditLogs").insertOne({ eventType: "user_created", userId: admin._id, targetUserId: result.insertedId, details: { email, displayName, role, entity }, at: now });
     return NextResponse.json({ id: result.insertedId.toString(), email, displayName, role }, { status: 201 });
@@ -95,12 +98,16 @@ export async function PATCH(request: NextRequest) {
     }
     const updates: Record<string, unknown> = { updatedAt: new Date(), updatedBy: admin._id };
     const changed: string[] = [];
+    const nextRole = body.role ?? target.role as Role;
+    const requestedEntity = body.entity !== undefined ? body.entity.trim() : String(target.entity || "");
+    const nextEntity = nextRole === "ADMIN" ? (requestedEntity || "Groupe") : actionEntityFor(requestedEntity);
+    if (!nextEntity) return errorResponse("Attribuez une entité valide à ce compte.");
     if (body.displayName !== undefined) {
       const displayName = body.displayName.trim();
       if (!displayName) return errorResponse("Le nom d'affichage est requis.");
       updates.displayName = displayName; changed.push("displayName");
     }
-    if (body.entity !== undefined) { updates.entity = body.entity.trim() || "Groupe"; changed.push("entity"); }
+    if (body.entity !== undefined && nextEntity !== target.entity) { updates.entity = nextEntity; changed.push("entity"); }
     if (body.active !== undefined) { updates.active = Boolean(body.active); changed.push("active"); }
     if (body.role !== undefined) {
       if (!ROLES.includes(body.role)) return errorResponse("Rôle invalide.");
@@ -111,7 +118,7 @@ export async function PATCH(request: NextRequest) {
       updates.passwordHash = await hashPassword(body.password); changed.push("password");
     }
     if (changed.length) await users.updateOne({ _id: targetId }, { $set: updates });
-    const revokeSessions = body.revokeSessions === true || body.active === false || body.password !== undefined || changed.includes("role");
+    const revokeSessions = body.revokeSessions === true || body.active === false || body.password !== undefined || changed.includes("role") || changed.includes("entity");
     if (revokeSessions) await db.collection("sessions").deleteMany({ userId: targetId });
     await db.collection("auditLogs").insertOne({ eventType: revokeSessions && !changed.length ? "sessions_revoked" : "user_updated", userId: admin._id, targetUserId: targetId, details: { fields: changed, revokedSessions: revokeSessions, targetEmail: target.email }, at: new Date() });
     return NextResponse.json({ ok: true, revokedSessions: revokeSessions });
