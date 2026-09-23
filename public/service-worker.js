@@ -1,8 +1,8 @@
-const CACHE_VERSION = 'flood-crisis-management-shell-v2';
+const CACHE_VERSION = 'flood-crisis-management-shell-v3';
 const APP_SHELL = [
   '/',
   '/crisis.html',
-  '/mongo-collab.js?v=4.1.0',
+  '/mongo-collab.js?v=4.2.0',
   '/manifest.webmanifest',
   '/branding/flood-crisis-management-logo.png',
   '/icons/icon-192.png',
@@ -41,6 +41,18 @@ self.addEventListener('fetch', event => {
           return response;
         })
         .catch(() => caches.match('/crisis.html'))
+    );
+    return;
+  }
+
+  if (url.pathname === '/mongo-collab.js') {
+    event.respondWith(
+      fetch(request)
+        .then(response => {
+          if (response.ok) caches.open(CACHE_VERSION).then(cache => cache.put(request, response.clone()));
+          return response;
+        })
+        .catch(() => caches.match(request))
     );
     return;
   }

@@ -2079,7 +2079,8 @@ Décisions / validations : ${dgDecisionItems().map(x=>x.title).join(' | ')}`;
     });
     if(isIos&&!standalone) installBtn?.classList.add('ready');
     if('serviceWorker' in navigator&&location.protocol.startsWith('http')){
-      navigator.serviceWorker.register('/service-worker.js',{scope:'/'}).then(reg=>{
+      navigator.serviceWorker.register('/service-worker.js',{scope:'/',updateViaCache:'none'}).then(reg=>{
+        reg.update().catch(()=>{});
         const offerUpdate=()=>updateBox?.classList.add('show');
         if(reg.waiting) offerUpdate();
         reg.addEventListener('updatefound',()=>{const worker=reg.installing;if(!worker)return;worker.addEventListener('statechange',()=>{if(worker.state==='installed'&&navigator.serviceWorker.controller)offerUpdate()})});
@@ -2799,7 +2800,7 @@ Prochaine revue : ${state.crisis?.nextReview||'À définir'}`;
 })();
 </script>
 
-<script src="/mongo-collab.js?v=4.1.0"></script>
+<script src="/mongo-collab.js?v=4.2.0"></script>
 
 </body>
 </html>
