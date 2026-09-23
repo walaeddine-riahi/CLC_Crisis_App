@@ -12,15 +12,9 @@
   const OPERATIONAL_ROLE_LABELS = { ADMIN: 'Administrateur', GROUP_CRISIS: 'Gestion des risques Groupe', SITE_CLC: 'Coordinateur crise local', SITE_CF: 'Coordinateur crise local', ACTION_OWNER: 'Responsable d’action', DG: 'Direction Générale', VIEWER: 'Lecture seule' };
   const LOCAL_ONLY_KEYS = new Set(['profile']);
   const app = window.CLC_APP_BRIDGE;
-  const WRITE_SECTIONS = {
-    ADMIN: '*', GROUP_CRISIS: '*',
-    SITE_CLC: ['actions', 'simpleChecklists', 'entityDecisions', 'terrainEvidence', 'terrainByZone', 'journal', 'logistics', 'scope', 'emergencyOverride', 'lastTerrainUpdate', 'meteo', 'autoWeather', 'multiWeather'],
-    SITE_CF: ['actions', 'simpleChecklists', 'entityDecisions', 'terrainEvidence', 'terrainByZone', 'journal', 'scope', 'emergencyOverride', 'lastTerrainUpdate', 'meteo', 'autoWeather', 'multiWeather'],
-    ACTION_OWNER: ['actions', 'simpleChecklists', 'journal'], DG: ['crisis', 'deployment', 'entityDecisions', 'journal', 'decisions', 'meta'], VIEWER: []
-  };
   let profile = null, workspace = null, ready = false, syncing = false, syncTimer = null, pollTimer = null, presenceTimer = null;
   let lastSynced = {}, versions = {}, latestSyncAt = null, lastPollAt = null;
-  let adminState = { users: [], roles: [], actionCatalog: [], currentUserId: null, logs: [], pagination: { page: 1, pages: 1, total: 0 }, stats: { total: 0, last24h: 0, activeUsers24h: 0 }, filters: { eventType: '', search: '' }, loading: false, message: '', messageType: '' };
+  let adminState = { users: [], roles: [], privileges: [], actionScopes: [], actionCatalog: [], currentUserId: null, logs: [], pagination: { page: 1, pages: 1, total: 0 }, stats: { total: 0, last24h: 0, activeUsers24h: 0 }, filters: { eventType: '', search: '' }, loading: false, message: '', messageType: '' };
 
   const clone = (v) => v === undefined ? undefined : JSON.parse(JSON.stringify(v));
   const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
@@ -87,7 +81,8 @@
     }
     return data;
   }
-  function canWrite(section) { const allowed = WRITE_SECTIONS[profile?.role] ?? []; return allowed === '*' || allowed.includes(section); }
+  function roleLabel(code) { return adminState.roles.find(role => role.code === code)?.name || (profile?.role === code ? profile.roleLabel : '') || ROLE_LABELS[code] || code || '—'; }
+  function canWrite(section) { const allowed = profile?.writeSections ?? []; return allowed === '*' || allowed.includes(section); }
   function setStatus(kind, text) {
     els.dot.className = `collab-dot ${kind}`; els.status.textContent = text;
     els.fabText.textContent = kind === 'online' ? 'Synchronisé' : kind === 'syncing' ? 'Synchronisation…' : kind === 'offline' ? 'Hors connexion' : 'Temps réel';
@@ -100,8 +95,10 @@
     window.CLC_AUTH_ROLE = profile?.role || 'VIEWER';
     window.CLC_AUTH_ENTITY = profile?.entity || '';
     window.CLC_AUTH_ACTION_ACCESS = Array.isArray(profile?.actionAccess) ? profile.actionAccess : [];
+    window.CLC_AUTH_WRITE_SECTIONS = profile?.writeSections ?? [];
+    window.CLC_AUTH_ACTION_SCOPE = profile?.actionScope || 'ENTITY';
     document.documentElement.dataset.authRole = window.CLC_AUTH_ROLE;
-    els.user.textContent = profile?.displayName || profile?.email || '—'; els.role.textContent = ROLE_LABELS[profile?.role] || profile?.role || '—';
+    els.user.textContent = profile?.displayName || profile?.email || '—'; els.role.textContent = profile?.roleLabel || roleLabel(profile?.role);
     els.entity.textContent = profile?.entity || 'Groupe'; els.workspace.textContent = workspace?.name || '—';
     if (els.manageUsers) els.manageUsers.style.display = profile?.role === 'ADMIN' ? '' : 'none';
     if (els.adminNav) els.adminNav.hidden = profile?.role !== 'ADMIN';
@@ -112,7 +109,7 @@
     if (!profile) return next;
     next.profile = {
       ...(next.profile || {}),
-      role: OPERATIONAL_ROLE_LABELS[profile.role] || 'Lecture seule',
+      role: profile.roleLabel || OPERATIONAL_ROLE_LABELS[profile.role] || 'Lecture seule',
       name: profile.displayName || profile.email || 'Utilisateur',
     };
     return next;
@@ -120,7 +117,7 @@
   function escapeHtml(value) { return String(value).replace(/[&<>'"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[c])); }
   function renderPresence(rows) {
     if (!rows.length) { els.users.innerHTML = '<div class="collab-muted">Aucun utilisateur détecté.</div>'; return; }
-    els.users.innerHTML = rows.map(p => `<div class="collab-user"><span><b>${escapeHtml(p.displayName || p.email || 'Utilisateur')}</b><br><span class="collab-muted">${escapeHtml(ROLE_LABELS[p.role] || p.role || '')} ${p.entity ? '• ' + escapeHtml(p.entity) : ''}</span></span><span>${p.onlineAt ? new Date(p.onlineAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : ''}</span></div>`).join('');
+    els.users.innerHTML = rows.map(p => `<div class="collab-user"><span><b>${escapeHtml(p.displayName || p.email || 'Utilisateur')}</b><br><span class="collab-muted">${escapeHtml(roleLabel(p.role))} ${p.entity ? '• ' + escapeHtml(p.entity) : ''}</span></span><span>${p.onlineAt ? new Date(p.onlineAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : ''}</span></div>`).join('');
   }
   function applyRows(rows) {
     const next = clone(app.getState());
@@ -211,11 +208,12 @@
   }
 
   const adminDate = (value) => value ? new Date(value).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' }) : 'Jamais';
-  const adminEventLabels = { login: 'Connexion', login_failed: 'Échec de connexion', logout: 'Déconnexion', first_admin_created: 'Premier administrateur créé', user_created: 'Utilisateur créé', user_updated: 'Utilisateur modifié', sessions_revoked: 'Sessions révoquées', workspace_bootstrap: 'Initialisation plateforme', section_update: 'Donnée métier modifiée' };
+  const adminEventLabels = { login: 'Connexion', login_failed: 'Échec de connexion', logout: 'Déconnexion', first_admin_created: 'Premier administrateur créé', user_created: 'Utilisateur créé', user_updated: 'Utilisateur modifié', role_created: 'Rôle créé', role_updated: 'Rôle modifié', sessions_revoked: 'Sessions révoquées', workspace_bootstrap: 'Initialisation plateforme', section_update: 'Donnée métier modifiée' };
   function adminLogDetail(log) {
     const d = log.details || {};
     if (log.eventType === 'section_update') return `Section ${log.sectionKey || '—'} • version ${d.version || '—'} • ${d.entity || ''}`;
-    if (log.eventType === 'user_created') return `${d.email || log.target?.email || 'Compte'} • ${ROLE_LABELS[d.role] || d.role || ''}`;
+    if (log.eventType === 'user_created') return `${d.email || log.target?.email || 'Compte'} • ${roleLabel(d.role)}`;
+    if (log.eventType === 'role_created' || log.eventType === 'role_updated') return `${d.name || d.code || 'Rôle'} • ${(d.privileges || []).length} privilège(s)${d.affectedUsers ? ` • ${d.affectedUsers} utilisateur(s) déconnecté(s)` : ''}`;
     if (log.eventType === 'user_updated') return `${d.targetEmail || log.target?.email || 'Compte'} • champs : ${(d.fields || []).join(', ') || 'aucun'}${d.revokedSessions ? ' • sessions révoquées' : ''}`;
     if (log.eventType === 'sessions_revoked') return `${d.targetEmail || log.target?.email || 'Compte'} • toutes les sessions ont été fermées`;
     if (log.eventType === 'login_failed') return `${d.email || log.actor?.email || 'Compte inconnu'} • ${d.reason === 'inactive_account' ? 'compte désactivé' : 'identifiants incorrects'}`;
@@ -227,8 +225,8 @@
     if (!els.adminHost || profile?.role !== 'ADMIN') return;
     if (adminState.loading && !adminState.users.length) { els.adminHost.innerHTML = '<div class="v17-empty">Chargement du tableau de bord administrateur…</div>'; return; }
     const users = adminState.users || [], active = users.filter(u => u.active).length, admins = users.filter(u => u.active && u.role === 'ADMIN').length, connected = users.reduce((sum, u) => sum + Number(u.activeSessions || 0), 0);
-    const availableRoles = adminState.roles?.length ? adminState.roles : Object.keys(ROLE_LABELS);
-    const roleOptions = availableRoles.map(r => `<option value="${escapeHtml(r)}"${r === 'VIEWER' ? ' selected' : ''}>${escapeHtml(ROLE_LABELS[r] || r)}</option>`).join('');
+    const availableRoles = adminState.roles?.length ? adminState.roles : Object.entries(ROLE_LABELS).map(([code, name]) => ({ code, name, builtIn: true }));
+    const roleOptions = availableRoles.map(r => `<option value="${escapeHtml(r.code)}"${r.code === 'VIEWER' ? ' selected' : ''}>${escapeHtml(r.name)}</option>`).join('');
     const actionEntities = ['CLC', 'SBC', 'Delta Plastic', 'CF', 'Boucharray', 'Atig'];
     const entityOptions = selected => [...new Set(['Groupe', ...actionEntities, selected].filter(Boolean))].map(entity => `<option value="${escapeHtml(entity)}"${entity === selected ? ' selected' : ''}>${escapeHtml(entity)}</option>`).join('');
     const actionCatalog = adminState.actionCatalog || [];
@@ -239,12 +237,16 @@
       return `<section class="admin-access" data-access-panel hidden><div class="admin-access-head"><div><b>Accès complémentaires aux actions</b><p>Le rôle et l’entité restent le périmètre principal. Les actions cochées ci-dessous ajoutent un accès en lecture seule.</p></div><span data-access-count>${selected.size} autorisation(s)</span></div><div class="admin-access-filters"><label>Entité<select data-access-filter="entity"><option value="">Toutes les entités</option>${entities.map(entity => `<option value="${escapeHtml(entity)}">${escapeHtml(entity)}</option>`).join('')}</select></label><label>Responsable<select data-access-filter="owner"><option value="">Tous les responsables</option>${owners.map(owner => `<option value="${escapeHtml(owner)}">${escapeHtml(owner)}</option>`).join('')}</select></label><label>Action<input data-access-filter="search" placeholder="Rechercher une action"></label></div><div class="admin-access-tools"><button type="button" class="v17-mini" data-access-select-visible>Sélectionner les résultats</button><button type="button" class="v17-mini" data-access-clear-visible>Retirer les résultats</button></div><div class="admin-access-list">${actionCatalog.map(item => `<label data-access-item data-entity="${escapeHtml(item.entity)}" data-owner="${escapeHtml(item.owner)}" data-label="${escapeHtml(item.label)}"><input type="checkbox" data-action-access value="${escapeHtml(item.ref)}"${selected.has(item.ref) ? ' checked' : ''}><span><b>${escapeHtml(item.entity)}</b> — ${escapeHtml(item.label)}<small>Responsable : ${escapeHtml(item.owner)}</small></span></label>`).join('') || '<span class="collab-muted">Aucune action disponible.</span>'}</div><div class="admin-access-footer"><button type="button" class="v17-btn primary" data-access-save>Enregistrer les accès</button><button type="button" class="v17-btn" data-access-close>Fermer</button></div></section>`;
     };
     const eventOptions = Object.entries(adminEventLabels).map(([value, label]) => `<option value="${value}"${adminState.filters.eventType === value ? ' selected' : ''}>${escapeHtml(label)}</option>`).join('');
+    const privilegeOptions = selected => (adminState.privileges || []).map(privilege => `<label class="admin-privilege"><input type="checkbox" data-role-privilege value="${escapeHtml(privilege.code)}"${selected.includes(privilege.code) ? ' checked' : ''}><span><b>${escapeHtml(privilege.name)}</b><small>${escapeHtml(privilege.description)}</small></span></label>`).join('');
+    const scopeOptions = selected => (adminState.actionScopes || []).map(scope => `<option value="${escapeHtml(scope.code)}"${scope.code === selected ? ' selected' : ''}>${escapeHtml(scope.name)}</option>`).join('');
+    const customRoleCards = availableRoles.filter(role => !role.builtIn).map(role => `<article class="admin-role-card" data-admin-role="${escapeHtml(role.code)}"><div class="admin-user-top"><div><b>${escapeHtml(role.name)}</b><small>${escapeHtml(role.code)}</small></div><span class="admin-status on">PERSONNALISÉ</span></div><div class="admin-role-fields"><label>Nom<input data-role-field="name" value="${escapeHtml(role.name)}"></label><label>Portée des actions<select data-role-field="actionScope">${scopeOptions(role.actionScope)}</select></label><label class="full">Description<input data-role-field="description" value="${escapeHtml(role.description || '')}"></label></div><div class="admin-privileges">${privilegeOptions(role.privileges || [])}</div><button type="button" class="v17-btn primary" data-role-save>Enregistrer le rôle</button></article>`).join('');
     els.adminHost.innerHTML = `<div class="v17-head"><div><h2>Administration de la plateforme</h2><p>Gérer les comptes, les rôles, les accès et consulter la traçabilité technique et métier.</p></div><div class="v17-actions"><button class="v17-btn" id="adminRefresh">Actualiser</button></div></div>
       ${adminState.message ? `<div class="admin-message ${escapeHtml(adminState.messageType)}">${escapeHtml(adminState.message)}</div>` : ''}
       <div class="admin-kpis"><div class="admin-kpi"><span>Utilisateurs actifs</span><b>${active}/${users.length}</b></div><div class="admin-kpi"><span>Administrateurs</span><b>${admins}</b></div><div class="admin-kpi"><span>Sessions actives</span><b>${connected}</b></div><div class="admin-kpi"><span>Événements 24 h</span><b>${adminState.stats.last24h || 0}</b></div></div>
+      <section class="admin-panel admin-roles-panel"><div class="admin-panel-head"><div><h3>Gestion des rôles personnalisés</h3><p>Créez un rôle, choisissez sa portée et ses privilèges. Il apparaîtra automatiquement dans la liste des rôles utilisateur.</p></div></div><form id="adminCreateRole" class="admin-role-create"><div class="admin-role-fields"><label>Nom du rôle<input name="name" required minlength="2" placeholder="Ex. Coordinateur logistique"></label><label>Portée des actions<select name="actionScope" required>${scopeOptions('ENTITY')}</select></label><label class="full">Description<input name="description" placeholder="Mission et limites du rôle"></label></div><div class="admin-privileges">${privilegeOptions([])}</div><button class="v17-btn primary" type="submit">Créer le rôle</button></form>${customRoleCards ? `<div class="admin-role-list">${customRoleCards}</div>` : '<div class="v17-empty">Aucun rôle personnalisé.</div>'}</section>
       <div class="admin-layout"><section class="admin-panel"><div class="admin-panel-head"><div><h3>Gestion des utilisateurs</h3><p>Créer, modifier, désactiver ou forcer la déconnexion d’un compte.</p></div></div>
         <form class="admin-create" id="adminCreateUser"><label>Nom / fonction<input name="displayName" required placeholder="Nom du responsable ou fonction"></label><label>E-mail<input name="email" type="email" required placeholder="prenom.nom@delice.tn"></label><label>Rôle<select name="role">${roleOptions}</select></label><label>Entité<select name="entity" required>${entityOptions('CLC')}</select></label><label class="full">Mot de passe initial<input name="password" type="password" minlength="10" required autocomplete="new-password" placeholder="10 caractères minimum"></label><button class="v17-btn primary full" type="submit">Créer le compte</button></form>
-        <div class="admin-user-list">${users.map(u => `<article class="admin-user ${u.active ? '' : 'inactive'}" data-admin-user="${escapeHtml(u.id)}"><div class="admin-user-top"><div><b>${escapeHtml(u.displayName || u.email)}</b><small>${escapeHtml(u.email)}${u.id === adminState.currentUserId ? ' • Votre compte' : ''}</small></div><span class="admin-status ${u.active ? 'on' : 'off'}">${u.active ? 'ACTIF' : 'DÉSACTIVÉ'}</span></div><div class="admin-user-grid"><input data-field="displayName" value="${escapeHtml(u.displayName || '')}" aria-label="Nom"><select data-field="role" aria-label="Rôle">${availableRoles.map(r => `<option value="${escapeHtml(r)}"${u.role === r ? ' selected' : ''}>${escapeHtml(ROLE_LABELS[r] || r)}</option>`).join('')}</select><select data-field="entity" aria-label="Entité">${entityOptions(u.entity || 'Groupe')}</select></div><small>Dernière connexion : ${escapeHtml(adminDate(u.lastLoginAt))} • Sessions : ${u.activeSessions || 0}</small><div class="admin-user-actions"><button class="v17-mini" data-admin-action="save">Enregistrer</button><button class="v17-mini" data-admin-action="password">Réinitialiser le mot de passe</button><button class="v17-mini" data-admin-action="sessions" ${u.activeSessions ? '' : 'disabled'}>Déconnecter partout</button><button class="v17-mini" data-admin-action="toggle" ${u.id === adminState.currentUserId ? 'disabled' : ''}>${u.active ? 'Désactiver' : 'Réactiver'}</button><button class="v17-mini access" type="button" data-access-toggle>Accès aux actions (${Array.isArray(u.actionAccess) ? u.actionAccess.length : 0})</button></div>${additionalAccess(u)}</article>`).join('') || '<div class="v17-empty">Aucun utilisateur.</div>'}</div></section>
+        <div class="admin-user-list">${users.map(u => `<article class="admin-user ${u.active ? '' : 'inactive'}" data-admin-user="${escapeHtml(u.id)}"><div class="admin-user-top"><div><b>${escapeHtml(u.displayName || u.email)}</b><small>${escapeHtml(u.email)}${u.id === adminState.currentUserId ? ' • Votre compte' : ''}</small></div><span class="admin-status ${u.active ? 'on' : 'off'}">${u.active ? 'ACTIF' : 'DÉSACTIVÉ'}</span></div><div class="admin-user-grid"><input data-field="displayName" value="${escapeHtml(u.displayName || '')}" aria-label="Nom"><select data-field="role" aria-label="Rôle">${availableRoles.map(r => `<option value="${escapeHtml(r.code)}"${u.role === r.code ? ' selected' : ''}>${escapeHtml(r.name)}</option>`).join('')}</select><select data-field="entity" aria-label="Entité">${entityOptions(u.entity || 'Groupe')}</select></div><small>Dernière connexion : ${escapeHtml(adminDate(u.lastLoginAt))} • Sessions : ${u.activeSessions || 0}</small><div class="admin-user-actions"><button class="v17-mini" data-admin-action="save">Enregistrer</button><button class="v17-mini" data-admin-action="password">Réinitialiser le mot de passe</button><button class="v17-mini" data-admin-action="sessions" ${u.activeSessions ? '' : 'disabled'}>Déconnecter partout</button><button class="v17-mini" data-admin-action="toggle" ${u.id === adminState.currentUserId ? 'disabled' : ''}>${u.active ? 'Désactiver' : 'Réactiver'}</button><button class="v17-mini access" type="button" data-access-toggle>Accès aux actions (${Array.isArray(u.actionAccess) ? u.actionAccess.length : 0})</button></div>${additionalAccess(u)}</article>`).join('') || '<div class="v17-empty">Aucun utilisateur.</div>'}</div></section>
         <section class="admin-panel"><div class="admin-panel-head"><div><h3>Logs de la plateforme</h3><p>${adminState.stats.total || 0} événements tracés • ${adminState.stats.activeUsers24h || 0} utilisateur(s) actif(s) sur 24 h.</p></div></div><div class="admin-filter"><label>Type<select id="adminLogType"><option value="">Tous les événements</option>${eventOptions}</select></label><label>Recherche<input id="adminLogSearch" value="${escapeHtml(adminState.filters.search)}" placeholder="E-mail, section, événement"></label><button class="v17-btn" id="adminApplyLogs">Filtrer</button></div><div class="admin-log-list">${(adminState.logs || []).map(log => `<article class="admin-log ${log.eventType === 'login_failed' ? 'security' : ['user_updated', 'sessions_revoked'].includes(log.eventType) ? 'warn' : ''}"><div class="admin-log-top"><b>${escapeHtml(adminEventLabels[log.eventType] || log.eventType)}</b><small>${escapeHtml(adminDate(log.at))}</small></div><p><b>${escapeHtml(log.actor?.displayName || log.actor?.email || 'Système')}</b> — ${escapeHtml(adminLogDetail(log))}</p></article>`).join('') || '<div class="v17-empty">Aucun événement pour ces filtres.</div>'}</div><div class="admin-pagination"><button class="v17-mini" id="adminPrevLogs" ${adminState.pagination.page <= 1 ? 'disabled' : ''}>Précédent</button><span>Page ${adminState.pagination.page || 1}/${adminState.pagination.pages || 1}</span><button class="v17-mini" id="adminNextLogs" ${adminState.pagination.page >= adminState.pagination.pages ? 'disabled' : ''}>Suivant</button></div></section></div>`;
     bindAdminDashboard();
   }
@@ -254,10 +256,12 @@
     const query = new URLSearchParams({ page: String(page), limit: '30' });
     if (adminState.filters.eventType) query.set('eventType', adminState.filters.eventType);
     if (adminState.filters.search) query.set('search', adminState.filters.search);
-    const [usersResult, logsResult] = await Promise.allSettled([api('/api/admin/users'), api(`/api/admin/logs?${query}`)]);
+    const [usersResult, rolesResult, logsResult] = await Promise.allSettled([api('/api/admin/users'), api('/api/admin/roles'), api(`/api/admin/logs?${query}`)]);
     const errors = [];
     if (usersResult.status === 'fulfilled') adminState = { ...adminState, ...usersResult.value };
     else errors.push(`Utilisateurs : ${usersResult.reason?.message || 'chargement impossible'}`);
+    if (rolesResult.status === 'fulfilled') adminState = { ...adminState, ...rolesResult.value };
+    else errors.push(`Rôles : ${rolesResult.reason?.message || 'chargement impossible'}`);
     if (logsResult.status === 'fulfilled') adminState = { ...adminState, logs: logsResult.value.logs || [], pagination: logsResult.value.pagination, stats: logsResult.value.stats };
     else errors.push(`Logs : ${logsResult.reason?.message || 'chargement impossible'}`);
     adminState.loading = false;
@@ -268,6 +272,17 @@
   function openAdminDashboard() { if (profile?.role !== 'ADMIN') return; els.panel.classList.remove('show'); els.adminNav?.click(); loadAdminDashboard(1); }
   function bindAdminDashboard() {
     $('adminRefresh')?.addEventListener('click', () => loadAdminDashboard(adminState.pagination.page || 1));
+    const selectedPrivileges = host => [...host.querySelectorAll('[data-role-privilege]:checked')].map(input => input.value);
+    $('adminCreateRole')?.addEventListener('submit', async event => {
+      event.preventDefault(); const form = new FormData(event.currentTarget);
+      try { await api('/api/admin/roles', { method: 'POST', body: JSON.stringify({ name: form.get('name'), description: form.get('description'), actionScope: form.get('actionScope'), privileges: selectedPrivileges(event.currentTarget) }) }); adminState.message = 'Rôle créé et ajouté à la liste.'; adminState.messageType = 'success'; await loadAdminDashboard(1); }
+      catch (error) { adminMessage(error.message, 'error'); }
+    });
+    els.adminHost.querySelectorAll('[data-role-save]').forEach(button => button.addEventListener('click', async () => {
+      const card = button.closest('[data-admin-role]'); if (!card) return;
+      try { await api('/api/admin/roles', { method: 'PATCH', body: JSON.stringify({ code: card.dataset.adminRole, name: card.querySelector('[data-role-field="name"]').value, description: card.querySelector('[data-role-field="description"]').value, actionScope: card.querySelector('[data-role-field="actionScope"]').value, privileges: selectedPrivileges(card) }) }); adminState.message = 'Rôle mis à jour. Les utilisateurs concernés devront se reconnecter.'; adminState.messageType = 'success'; await loadAdminDashboard(adminState.pagination.page || 1); }
+      catch (error) { adminMessage(error.message, 'error'); }
+    }));
     $('adminCreateUser')?.addEventListener('submit', async (event) => { event.preventDefault(); const form = new FormData(event.currentTarget); try { await api('/api/admin/users', { method: 'POST', body: JSON.stringify(Object.fromEntries(form.entries())) }); adminState.message = 'Compte créé avec succès.'; adminState.messageType = 'success'; await loadAdminDashboard(1); } catch (error) { adminMessage(error.message, 'error'); } });
     const filterAccessPanel = panel => {
       const entity = panel.querySelector('[data-access-filter="entity"]')?.value || '';

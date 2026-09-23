@@ -4,6 +4,7 @@ import { getDb } from "@/lib/mongodb";
 import { createSession, destroySession, getCurrentUser, hashPassword, publicUser, verifyPassword, type AppUser } from "@/lib/auth";
 import { errorResponse } from "@/lib/http";
 import { apiErrorResponse } from "@/lib/api-errors";
+import { resolveRoleDefinition } from "@/lib/role-store";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -26,7 +27,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const db = await getDb();
-    type UserRecord = Omit<AppUser, "_id"> & { _id?: ObjectId; passwordHash: string; createdAt: Date; lastLoginAt?: Date };
+    type UserRecord = Omit<AppUser, "_id" | "roleDefinition"> & { _id?: ObjectId; passwordHash: string; createdAt: Date; lastLoginAt?: Date };
     const users = db.collection<UserRecord>("users");
     await users.createIndex({ email: 1 }, { unique: true });
     let user = await users.findOne({ email });
@@ -57,13 +58,15 @@ export async function POST(request: NextRequest) {
       await db.collection("auditLogs").insertOne({ eventType: "login_failed", ...(user?._id ? { userId: user._id } : {}), details: { email, reason: user?.active === false ? "inactive_account" : "invalid_credentials" }, at: new Date() });
       return errorResponse("E-mail ou mot de passe incorrect.", 401);
     }
+    const roleDefinition = await resolveRoleDefinition(db, user.role);
+    if (!roleDefinition) return errorResponse("Le rôle de ce compte n’est plus disponible. Contactez un administrateur.", 403);
     await createSession(user._id);
     const loginAt = new Date();
     await Promise.all([
       users.updateOne({ _id: user._id }, { $set: { lastLoginAt: loginAt } }),
       db.collection("auditLogs").insertOne({ eventType: bootstrapped ? "first_admin_created" : "login", userId: user._id, at: loginAt }),
     ]);
-    return NextResponse.json({ authenticated: true, bootstrapped, user: publicUser(user as AppUser) });
+    return NextResponse.json({ authenticated: true, bootstrapped, user: publicUser({ ...user, roleDefinition } as AppUser) });
   } catch (error) {
     return apiErrorResponse(error, "auth/session:POST");
   }

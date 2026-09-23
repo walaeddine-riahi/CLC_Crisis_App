@@ -1,4 +1,4 @@
-import type { Role } from "@/lib/roles";
+import type { ActionScope } from "@/lib/roles";
 
 export const ACTION_ENTITIES = ["CLC", "SBC", "Delta Plastic", "CF", "Boucharray", "Atig"] as const;
 
@@ -53,28 +53,28 @@ function accessSet(actionAccess: unknown) {
   return new Set(Array.isArray(actionAccess) ? actionAccess.filter((item): item is string => typeof item === "string") : []);
 }
 
-function visibleActions(payload: unknown, payloadEntity: ActionEntity, role: Role, displayName: unknown, entity: unknown, actionAccess: unknown) {
+function visibleActions(payload: unknown, payloadEntity: ActionEntity, role: string, actionScope: ActionScope, displayName: unknown, entity: unknown, actionAccess: unknown) {
   if (!Array.isArray(payload)) return [];
   const ownEntity = actionEntityFor(entity);
   const grants = accessSet(actionAccess);
   return payload.filter((action) => {
     const granted = isRecord(action) && grants.has(actionReference(payloadEntity, action.id));
     if (granted) return true;
-    if (payloadEntity !== ownEntity) return false;
-    return role !== "ACTION_OWNER" || actionIsAssignedTo(action, displayName, entity);
+    if (actionScope === "GRANTED_ONLY" || payloadEntity !== ownEntity) return false;
+    return actionScope !== "ASSIGNED" || actionIsAssignedTo(action, displayName, entity);
   });
 }
 
-export function scopeActionPayload(sectionKey: string, payload: unknown, role: Role, entity: unknown, displayName?: unknown, actionAccess?: unknown) {
-  if (role === "ADMIN") return payload;
+export function scopeActionPayload(sectionKey: string, payload: unknown, role: string, actionScope: ActionScope, entity: unknown, displayName?: unknown, actionAccess?: unknown) {
+  if (role === "ADMIN" || actionScope === "ALL") return payload;
   const actionEntity = actionEntityFor(entity);
-  if (sectionKey === "actions") return visibleActions(payload, "CLC", role, displayName, entity, actionAccess);
+  if (sectionKey === "actions") return visibleActions(payload, "CLC", role, actionScope, displayName, entity, actionAccess);
   if (sectionKey === "simpleChecklists") {
     if (!isRecord(payload)) return {};
     const scoped: Record<string, unknown> = {};
     for (const candidate of ACTION_ENTITIES) {
       if (candidate === "CLC") continue;
-      const rows = visibleActions(payload[candidate], candidate, role, displayName, entity, actionAccess);
+      const rows = visibleActions(payload[candidate], candidate, role, actionScope, displayName, entity, actionAccess);
       if (rows.length || candidate === actionEntity) scoped[candidate] = rows;
     }
     return scoped;
@@ -82,8 +82,9 @@ export function scopeActionPayload(sectionKey: string, payload: unknown, role: R
   return payload;
 }
 
-export function canAccessActionSection(sectionKey: string, role: Role, entity: unknown) {
-  if (role === "ADMIN") return true;
+export function canAccessActionSection(sectionKey: string, role: string, actionScope: ActionScope, entity: unknown) {
+  if (role === "ADMIN" || actionScope === "ALL") return true;
+  if (actionScope === "GRANTED_ONLY" && ["actions", "simpleChecklists"].includes(sectionKey)) return false;
   const actionEntity = actionEntityFor(entity);
   if (sectionKey === "actions") return actionEntity === "CLC";
   if (sectionKey === "simpleChecklists") return Boolean(actionEntity && actionEntity !== "CLC");
@@ -99,19 +100,19 @@ function mergeResponsibleActions(current: unknown, submitted: unknown) {
   });
 }
 
-export function mergeScopedActionPayload(sectionKey: string, current: unknown, submitted: unknown, role: Role, entity: unknown) {
-  if (role === "ADMIN" || !["actions", "simpleChecklists"].includes(sectionKey)) return submitted;
+export function mergeScopedActionPayload(sectionKey: string, current: unknown, submitted: unknown, role: string, actionScope: ActionScope, entity: unknown) {
+  if (role === "ADMIN" || actionScope === "ALL" || !["actions", "simpleChecklists"].includes(sectionKey)) return submitted;
   const actionEntity = actionEntityFor(entity);
   if (sectionKey === "actions") {
     if (actionEntity !== "CLC" || !Array.isArray(submitted)) return current;
-    return role === "ACTION_OWNER" ? mergeResponsibleActions(current, submitted) : submitted;
+    return actionScope === "ASSIGNED" ? mergeResponsibleActions(current, submitted) : submitted;
   }
   if (!actionEntity || actionEntity === "CLC") return current;
   const currentByEntity = isRecord(current) ? current : {};
   const submittedByEntity = isRecord(submitted) ? submitted : {};
   return {
     ...currentByEntity,
-    [actionEntity]: role === "ACTION_OWNER"
+    [actionEntity]: actionScope === "ASSIGNED"
       ? mergeResponsibleActions(currentByEntity[actionEntity], submittedByEntity[actionEntity])
       : Array.isArray(submittedByEntity[actionEntity]) ? submittedByEntity[actionEntity] : [],
   };

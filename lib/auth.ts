@@ -3,7 +3,8 @@ import { createHash, randomBytes, scrypt as scryptCallback, timingSafeEqual } fr
 import { promisify } from "node:util";
 import { ObjectId } from "mongodb";
 import { getDb } from "@/lib/mongodb";
-import type { Role } from "@/lib/roles";
+import { resolveRoleDefinition } from "@/lib/role-store";
+import type { RoleDefinition } from "@/lib/roles";
 
 const scrypt = promisify(scryptCallback);
 const COOKIE_NAME = "clc_session_v2";
@@ -14,7 +15,8 @@ export type AppUser = {
   _id: ObjectId;
   email: string;
   displayName: string;
-  role: Role;
+  role: string;
+  roleDefinition: RoleDefinition;
   entity: string;
   actionAccess?: string[];
   active: boolean;
@@ -66,9 +68,17 @@ export async function getCurrentUser(): Promise<AppUser | null> {
   const db = await getDb();
   const session = await db.collection("sessions").findOne({ tokenHash: tokenHash(token), expiresAt: { $gt: new Date() } });
   if (!session) return null;
-  return db.collection<AppUser>("users").findOne({ _id: session.userId as ObjectId, active: true });
+  const user = await db.collection<Omit<AppUser, "roleDefinition">>("users").findOne({ _id: session.userId as ObjectId, active: true });
+  if (!user) return null;
+  const roleDefinition = await resolveRoleDefinition(db, user.role);
+  return roleDefinition ? { ...user, roleDefinition } : null;
 }
 
 export function publicUser(user: AppUser) {
-  return { id: user._id.toHexString(), email: user.email, displayName: user.displayName, role: user.role, entity: user.entity, actionAccess: Array.isArray(user.actionAccess) ? user.actionAccess : [] };
+  return {
+    id: user._id.toHexString(), email: user.email, displayName: user.displayName, role: user.role,
+    roleLabel: user.roleDefinition.name, writeSections: user.roleDefinition.writeSections,
+    actionScope: user.roleDefinition.actionScope, entity: user.entity,
+    actionAccess: Array.isArray(user.actionAccess) ? user.actionAccess : [],
+  };
 }

@@ -4,7 +4,7 @@ import { getCurrentUser, hashPassword } from "@/lib/auth";
 import { apiErrorResponse } from "@/lib/api-errors";
 import { errorResponse } from "@/lib/http";
 import { getDb } from "@/lib/mongodb";
-import { ROLES, type Role } from "@/lib/roles";
+import { listRoleDefinitions, resolveRoleDefinition } from "@/lib/role-store";
 import { actionEntityFor, actionReference, ACTION_ENTITIES } from "@/lib/action-scope";
 
 export const runtime = "nodejs";
@@ -58,13 +58,14 @@ export async function GET() {
     if (!admin) return errorResponse("Accès administrateur requis.", 403);
     const db = await getDb();
     const now = new Date();
-    const [users, sessions, actionCatalog] = await Promise.all([
+    const [users, sessions, actionCatalog, roles] = await Promise.all([
       db.collection("users").find({}, { projection: { passwordHash: 0 } }).sort({ displayName: 1 }).toArray(),
       db.collection("sessions").find(
         { expiresAt: { $gt: now }, userId: { $exists: true } },
         { projection: { userId: 1 } },
       ).toArray(),
       loadActionCatalog(db),
+      listRoleDefinitions(db),
     ]);
     const sessionCounts = new Map<string, number>();
     for (const session of sessions) {
@@ -74,7 +75,7 @@ export async function GET() {
     }
     return NextResponse.json({
       currentUserId: admin._id.toString(),
-      roles: ROLES,
+      roles,
       users: users.map((user) => ({
         id: user._id.toString(), email: user.email, displayName: user.displayName, role: user.role,
         entity: user.entity || "Groupe", actionAccess: Array.isArray(user.actionAccess) ? user.actionAccess : [], active: user.active !== false, createdAt: user.createdAt || null,
@@ -90,7 +91,7 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   const admin = await requireAdmin();
   if (!admin) return errorResponse("Accès administrateur requis.", 403);
-  const body = await request.json().catch(() => null) as { email?: string; password?: string; displayName?: string; role?: Role; entity?: string; actionAccess?: string[] } | null;
+  const body = await request.json().catch(() => null) as { email?: string; password?: string; displayName?: string; role?: string; entity?: string; actionAccess?: string[] } | null;
   const email = body?.email?.trim().toLowerCase() || "";
   const password = body?.password || "";
   const displayName = body?.displayName?.trim() || "";
@@ -98,9 +99,10 @@ export async function POST(request: NextRequest) {
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return errorResponse("Adresse e-mail invalide.");
   if (password.length < 10) return errorResponse("Le mot de passe doit contenir au moins 10 caractères.");
   if (!displayName) return errorResponse("Le nom d'affichage est requis.");
-  if (!role || !ROLES.includes(role)) return errorResponse("Rôle invalide.");
+  if (!role) return errorResponse("Rôle invalide.");
   try {
     const db = await getDb();
+    if (!await resolveRoleDefinition(db, role)) return errorResponse("Rôle invalide.");
     const now = new Date();
     const requestedEntity = body?.entity?.trim() || "";
     const entity = role === "ADMIN" ? (requestedEntity || "Groupe") : actionEntityFor(requestedEntity);
@@ -119,7 +121,7 @@ export async function POST(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   const admin = await requireAdmin();
   if (!admin) return errorResponse("Accès administrateur requis.", 403);
-  const body = await request.json().catch(() => null) as { id?: string; displayName?: string; role?: Role; entity?: string; actionAccess?: string[]; active?: boolean; password?: string; revokeSessions?: boolean } | null;
+  const body = await request.json().catch(() => null) as { id?: string; displayName?: string; role?: string; entity?: string; actionAccess?: string[]; active?: boolean; password?: string; revokeSessions?: boolean } | null;
   if (!body?.id || !ObjectId.isValid(body.id)) return errorResponse("Identifiant utilisateur invalide.");
   const targetId = new ObjectId(body.id);
   const isSelf = targetId.equals(admin._id);
@@ -138,7 +140,8 @@ export async function PATCH(request: NextRequest) {
     }
     const updates: Record<string, unknown> = { updatedAt: new Date(), updatedBy: admin._id };
     const changed: string[] = [];
-    const nextRole = body.role ?? target.role as Role;
+    const nextRole = body.role ?? String(target.role);
+    if (!await resolveRoleDefinition(db, nextRole)) return errorResponse("Rôle invalide.");
     const requestedEntity = body.entity !== undefined ? body.entity.trim() : String(target.entity || "");
     const nextEntity = nextRole === "ADMIN" ? (requestedEntity || "Groupe") : actionEntityFor(requestedEntity);
     if (!nextEntity) return errorResponse("Attribuez une entité valide à ce compte.");
@@ -150,7 +153,6 @@ export async function PATCH(request: NextRequest) {
     if (body.entity !== undefined && nextEntity !== target.entity) { updates.entity = nextEntity; changed.push("entity"); }
     if (body.active !== undefined) { updates.active = Boolean(body.active); changed.push("active"); }
     if (body.role !== undefined) {
-      if (!ROLES.includes(body.role)) return errorResponse("Rôle invalide.");
       if (body.role !== target.role) { updates.role = body.role; changed.push("role"); }
     }
     if (body.actionAccess !== undefined) {

@@ -1,8 +1,8 @@
-const CACHE_VERSION = 'flood-crisis-management-shell-v3';
+const CACHE_VERSION = 'flood-crisis-management-shell-v4';
 const APP_SHELL = [
   '/',
   '/crisis.html',
-  '/mongo-collab.js?v=4.2.0',
+  '/mongo-collab.js?v=4.3.0',
   '/manifest.webmanifest',
   '/branding/flood-crisis-management-logo.png',
   '/icons/icon-192.png',

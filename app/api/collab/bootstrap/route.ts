@@ -30,7 +30,7 @@ export async function GET() {
   return NextResponse.json({
     user: publicUser(user),
     workspace: { id: workspace._id.toString(), code: workspace.code, name: workspace.name },
-    sections: rows.map((row) => ({ sectionKey: row.sectionKey, payload: scopeActionPayload(row.sectionKey, row.payload, user.role, user.entity, user.displayName, user.actionAccess), version: row.version, updatedAt: row.updatedAt, updatedBy: row.updatedBy?.toString() })),
+    sections: rows.map((row) => ({ sectionKey: row.sectionKey, payload: scopeActionPayload(row.sectionKey, row.payload, user.role, user.roleDefinition.actionScope, user.entity, user.displayName, user.actionAccess), version: row.version, updatedAt: row.updatedAt, updatedBy: row.updatedBy?.toString() })),
   }, { headers: { "Cache-Control": "no-store" } });
 }
 
