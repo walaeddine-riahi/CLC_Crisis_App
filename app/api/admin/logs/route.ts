@@ -8,7 +8,7 @@ import { getDb } from "@/lib/mongodb";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const EVENT_TYPES = ["login", "login_failed", "logout", "first_admin_created", "user_created", "user_updated", "sessions_revoked", "workspace_bootstrap", "section_update"];
+const EVENT_TYPES = ["login", "login_failed", "logout", "first_admin_created", "user_created", "user_updated", "users_deleted", "role_created", "role_updated", "sessions_revoked", "workspace_bootstrap", "section_update"];
 
 export async function GET(request: NextRequest) {
   try {
@@ -33,6 +33,7 @@ export async function GET(request: NextRequest) {
         { sectionKey: { $regex: escaped, $options: "i" } },
         { "details.email": { $regex: escaped, $options: "i" } },
         { "details.targetEmail": { $regex: escaped, $options: "i" } },
+        { "details.users.email": { $regex: escaped, $options: "i" } },
       ];
     }
     const db = await getDb();

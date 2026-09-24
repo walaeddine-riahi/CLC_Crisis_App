@@ -15,6 +15,7 @@
   let profile = null, workspace = null, ready = false, syncing = false, syncTimer = null, pollTimer = null, presenceTimer = null;
   let lastSynced = {}, versions = {}, latestSyncAt = null, lastPollAt = null;
   let adminState = { users: [], roles: [], privileges: [], actionScopes: [], actionCatalog: [], currentUserId: null, logs: [], pagination: { page: 1, pages: 1, total: 0 }, stats: { total: 0, last24h: 0, activeUsers24h: 0 }, filters: { eventType: '', search: '' }, loading: false, message: '', messageType: '' };
+  let selectedAdminUsers = new Set();
 
   const clone = (v) => v === undefined ? undefined : JSON.parse(JSON.stringify(v));
   const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
@@ -208,11 +209,12 @@
   }
 
   const adminDate = (value) => value ? new Date(value).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' }) : 'Jamais';
-  const adminEventLabels = { login: 'Connexion', login_failed: 'Échec de connexion', logout: 'Déconnexion', first_admin_created: 'Premier administrateur créé', user_created: 'Utilisateur créé', user_updated: 'Utilisateur modifié', role_created: 'Rôle créé', role_updated: 'Rôle modifié', sessions_revoked: 'Sessions révoquées', workspace_bootstrap: 'Initialisation plateforme', section_update: 'Donnée métier modifiée' };
+  const adminEventLabels = { login: 'Connexion', login_failed: 'Échec de connexion', logout: 'Déconnexion', first_admin_created: 'Premier administrateur créé', user_created: 'Utilisateur créé', user_updated: 'Utilisateur modifié', users_deleted: 'Utilisateur(s) supprimé(s)', role_created: 'Rôle créé', role_updated: 'Rôle modifié', sessions_revoked: 'Sessions révoquées', workspace_bootstrap: 'Initialisation plateforme', section_update: 'Donnée métier modifiée' };
   function adminLogDetail(log) {
     const d = log.details || {};
     if (log.eventType === 'section_update') return `Section ${log.sectionKey || '—'} • version ${d.version || '—'} • ${d.entity || ''}`;
     if (log.eventType === 'user_created') return `${d.email || log.target?.email || 'Compte'} • ${roleLabel(d.role)}`;
+    if (log.eventType === 'users_deleted') return `${d.count || 0} compte(s) supprimé(s) • ${(d.users || []).map(user => user.email).join(', ')}`;
     if (log.eventType === 'role_created' || log.eventType === 'role_updated') return `${d.name || d.code || 'Rôle'} • ${(d.privileges || []).length} privilège(s)${d.affectedUsers ? ` • ${d.affectedUsers} utilisateur(s) déconnecté(s)` : ''}`;
     if (log.eventType === 'user_updated') return `${d.targetEmail || log.target?.email || 'Compte'} • champs : ${(d.fields || []).join(', ') || 'aucun'}${d.revokedSessions ? ' • sessions révoquées' : ''}`;
     if (log.eventType === 'sessions_revoked') return `${d.targetEmail || log.target?.email || 'Compte'} • toutes les sessions ont été fermées`;
@@ -225,6 +227,8 @@
     if (!els.adminHost || profile?.role !== 'ADMIN') return;
     if (adminState.loading && !adminState.users.length) { els.adminHost.innerHTML = '<div class="v17-empty">Chargement du tableau de bord administrateur…</div>'; return; }
     const users = adminState.users || [], active = users.filter(u => u.active).length, admins = users.filter(u => u.active && u.role === 'ADMIN').length, connected = users.reduce((sum, u) => sum + Number(u.activeSessions || 0), 0);
+    selectedAdminUsers = new Set([...selectedAdminUsers].filter(id => id !== adminState.currentUserId && users.some(user => user.id === id)));
+    const selectedUserCount = selectedAdminUsers.size;
     const availableRoles = adminState.roles?.length ? adminState.roles : Object.entries(ROLE_LABELS).map(([code, name]) => ({ code, name, builtIn: true }));
     const roleOptions = availableRoles.map(r => `<option value="${escapeHtml(r.code)}"${r.code === 'VIEWER' ? ' selected' : ''}>${escapeHtml(r.name)}</option>`).join('');
     const actionEntities = ['CLC', 'SBC', 'Delta Plastic', 'CF', 'Boucharray', 'Atig'];
@@ -244,9 +248,9 @@
       ${adminState.message ? `<div class="admin-message ${escapeHtml(adminState.messageType)}">${escapeHtml(adminState.message)}</div>` : ''}
       <div class="admin-kpis"><div class="admin-kpi"><span>Utilisateurs actifs</span><b>${active}/${users.length}</b></div><div class="admin-kpi"><span>Administrateurs</span><b>${admins}</b></div><div class="admin-kpi"><span>Sessions actives</span><b>${connected}</b></div><div class="admin-kpi"><span>Événements 24 h</span><b>${adminState.stats.last24h || 0}</b></div></div>
       <section class="admin-panel admin-roles-panel"><div class="admin-panel-head"><div><h3>Gestion des rôles personnalisés</h3><p>Créez un rôle, choisissez sa portée et ses privilèges. Il apparaîtra automatiquement dans la liste des rôles utilisateur.</p></div></div><form id="adminCreateRole" class="admin-role-create"><div class="admin-role-fields"><label>Nom du rôle<input name="name" required minlength="2" placeholder="Ex. Coordinateur logistique"></label><label>Portée des actions<select name="actionScope" required>${scopeOptions('ENTITY')}</select></label><label class="full">Description<input name="description" placeholder="Mission et limites du rôle"></label></div><div class="admin-privileges">${privilegeOptions([])}</div><button class="v17-btn primary" type="submit">Créer le rôle</button></form>${customRoleCards ? `<div class="admin-role-list">${customRoleCards}</div>` : '<div class="v17-empty">Aucun rôle personnalisé.</div>'}</section>
-      <div class="admin-layout"><section class="admin-panel"><div class="admin-panel-head"><div><h3>Gestion des utilisateurs</h3><p>Créer, modifier, désactiver ou forcer la déconnexion d’un compte.</p></div></div>
+      <div class="admin-layout"><section class="admin-panel"><div class="admin-panel-head"><div><h3>Gestion des utilisateurs</h3><p>Créer, modifier, désactiver, supprimer ou forcer la déconnexion d’un compte.</p></div></div>
         <form class="admin-create" id="adminCreateUser"><label>Nom / fonction<input name="displayName" required placeholder="Nom du responsable ou fonction"></label><label>E-mail<input name="email" type="email" required placeholder="prenom.nom@delice.tn"></label><label>Rôle<select name="role">${roleOptions}</select></label><label>Entité<select name="entity" required>${entityOptions('CLC')}</select></label><label class="full">Mot de passe initial<input name="password" type="password" minlength="10" required autocomplete="new-password" placeholder="10 caractères minimum"></label><button class="v17-btn primary full" type="submit">Créer le compte</button></form>
-        <div class="admin-user-list">${users.map(u => `<article class="admin-user ${u.active ? '' : 'inactive'}" data-admin-user="${escapeHtml(u.id)}"><div class="admin-user-top"><div><b>${escapeHtml(u.displayName || u.email)}</b><small>${escapeHtml(u.email)}${u.id === adminState.currentUserId ? ' • Votre compte' : ''}</small></div><span class="admin-status ${u.active ? 'on' : 'off'}">${u.active ? 'ACTIF' : 'DÉSACTIVÉ'}</span></div><div class="admin-user-grid"><input data-field="displayName" value="${escapeHtml(u.displayName || '')}" aria-label="Nom"><select data-field="role" aria-label="Rôle">${availableRoles.map(r => `<option value="${escapeHtml(r.code)}"${u.role === r.code ? ' selected' : ''}>${escapeHtml(r.name)}</option>`).join('')}</select><select data-field="entity" aria-label="Entité">${entityOptions(u.entity || 'Groupe')}</select></div><small>Dernière connexion : ${escapeHtml(adminDate(u.lastLoginAt))} • Sessions : ${u.activeSessions || 0}</small><div class="admin-user-actions"><button class="v17-mini" data-admin-action="save">Enregistrer</button><button class="v17-mini" data-admin-action="password">Réinitialiser le mot de passe</button><button class="v17-mini" data-admin-action="sessions" ${u.activeSessions ? '' : 'disabled'}>Déconnecter partout</button><button class="v17-mini" data-admin-action="toggle" ${u.id === adminState.currentUserId ? 'disabled' : ''}>${u.active ? 'Désactiver' : 'Réactiver'}</button><button class="v17-mini access" type="button" data-access-toggle>Accès aux actions (${Array.isArray(u.actionAccess) ? u.actionAccess.length : 0})</button></div>${additionalAccess(u)}</article>`).join('') || '<div class="v17-empty">Aucun utilisateur.</div>'}</div></section>
+        <div class="admin-user-bulk"><label><input type="checkbox" id="adminSelectAllUsers"> Sélectionner tous les comptes supprimables</label><button type="button" class="v17-btn danger" id="adminDeleteSelected" ${selectedUserCount ? '' : 'disabled'}>Supprimer la sélection (${selectedUserCount})</button></div><div class="admin-user-list">${users.map(u => `<article class="admin-user ${u.active ? '' : 'inactive'}" data-admin-user="${escapeHtml(u.id)}"><div class="admin-user-top"><div class="admin-user-select"><input type="checkbox" data-user-select value="${escapeHtml(u.id)}"${selectedAdminUsers.has(u.id) ? ' checked' : ''}${u.id === adminState.currentUserId ? ' disabled' : ''} aria-label="Sélectionner ${escapeHtml(u.displayName || u.email)}"><div><b>${escapeHtml(u.displayName || u.email)}</b><small>${escapeHtml(u.email)}${u.id === adminState.currentUserId ? ' • Votre compte' : ''}</small></div></div><span class="admin-status ${u.active ? 'on' : 'off'}">${u.active ? 'ACTIF' : 'DÉSACTIVÉ'}</span></div><div class="admin-user-grid"><input data-field="displayName" value="${escapeHtml(u.displayName || '')}" aria-label="Nom"><select data-field="role" aria-label="Rôle">${availableRoles.map(r => `<option value="${escapeHtml(r.code)}"${u.role === r.code ? ' selected' : ''}>${escapeHtml(r.name)}</option>`).join('')}</select><select data-field="entity" aria-label="Entité">${entityOptions(u.entity || 'Groupe')}</select></div><small>Dernière connexion : ${escapeHtml(adminDate(u.lastLoginAt))} • Sessions : ${u.activeSessions || 0}</small><div class="admin-user-actions"><button class="v17-mini" data-admin-action="save">Enregistrer</button><button class="v17-mini" data-admin-action="password">Réinitialiser le mot de passe</button><button class="v17-mini" data-admin-action="sessions" ${u.activeSessions ? '' : 'disabled'}>Déconnecter partout</button><button class="v17-mini" data-admin-action="toggle" ${u.id === adminState.currentUserId ? 'disabled' : ''}>${u.active ? 'Désactiver' : 'Réactiver'}</button><button class="v17-mini access" type="button" data-access-toggle>Accès aux actions (${Array.isArray(u.actionAccess) ? u.actionAccess.length : 0})</button><button class="v17-mini danger" type="button" data-admin-action="delete" ${u.id === adminState.currentUserId ? 'disabled' : ''}>Supprimer</button></div>${additionalAccess(u)}</article>`).join('') || '<div class="v17-empty">Aucun utilisateur.</div>'}</div></section>
         <section class="admin-panel"><div class="admin-panel-head"><div><h3>Logs de la plateforme</h3><p>${adminState.stats.total || 0} événements tracés • ${adminState.stats.activeUsers24h || 0} utilisateur(s) actif(s) sur 24 h.</p></div></div><div class="admin-filter"><label>Type<select id="adminLogType"><option value="">Tous les événements</option>${eventOptions}</select></label><label>Recherche<input id="adminLogSearch" value="${escapeHtml(adminState.filters.search)}" placeholder="E-mail, section, événement"></label><button class="v17-btn" id="adminApplyLogs">Filtrer</button></div><div class="admin-log-list">${(adminState.logs || []).map(log => `<article class="admin-log ${log.eventType === 'login_failed' ? 'security' : ['user_updated', 'sessions_revoked'].includes(log.eventType) ? 'warn' : ''}"><div class="admin-log-top"><b>${escapeHtml(adminEventLabels[log.eventType] || log.eventType)}</b><small>${escapeHtml(adminDate(log.at))}</small></div><p><b>${escapeHtml(log.actor?.displayName || log.actor?.email || 'Système')}</b> — ${escapeHtml(adminLogDetail(log))}</p></article>`).join('') || '<div class="v17-empty">Aucun événement pour ces filtres.</div>'}</div><div class="admin-pagination"><button class="v17-mini" id="adminPrevLogs" ${adminState.pagination.page <= 1 ? 'disabled' : ''}>Précédent</button><span>Page ${adminState.pagination.page || 1}/${adminState.pagination.pages || 1}</span><button class="v17-mini" id="adminNextLogs" ${adminState.pagination.page >= adminState.pagination.pages ? 'disabled' : ''}>Suivant</button></div></section></div>`;
     bindAdminDashboard();
   }
@@ -270,6 +274,18 @@
     renderAdminDashboard();
   }
   function openAdminDashboard() { if (profile?.role !== 'ADMIN') return; els.panel.classList.remove('show'); els.adminNav?.click(); loadAdminDashboard(1); }
+  async function deleteAdminUsers(ids) {
+    const selected = adminState.users.filter(user => ids.includes(user.id) && user.id !== adminState.currentUserId);
+    if (!selected.length) return;
+    const names = selected.slice(0, 6).map(user => user.displayName || user.email).join(', ');
+    const suffix = selected.length > 6 ? ` et ${selected.length - 6} autre(s)` : '';
+    if (!confirm(`Supprimer définitivement ${selected.length} compte(s) : ${names}${suffix} ?\n\nLes sessions seront fermées. Les journaux d’audit seront conservés.`)) return;
+    await api('/api/admin/users', { method: 'DELETE', body: JSON.stringify({ ids: selected.map(user => user.id) }) });
+    selected.forEach(user => selectedAdminUsers.delete(user.id));
+    adminState.message = `${selected.length} compte(s) supprimé(s) avec succès.`;
+    adminState.messageType = 'success';
+    await loadAdminDashboard(adminState.pagination.page || 1);
+  }
   function bindAdminDashboard() {
     $('adminRefresh')?.addEventListener('click', () => loadAdminDashboard(adminState.pagination.page || 1));
     const selectedPrivileges = host => [...host.querySelectorAll('[data-role-privilege]:checked')].map(input => input.value);
@@ -284,6 +300,20 @@
       catch (error) { adminMessage(error.message, 'error'); }
     }));
     $('adminCreateUser')?.addEventListener('submit', async (event) => { event.preventDefault(); const form = new FormData(event.currentTarget); try { await api('/api/admin/users', { method: 'POST', body: JSON.stringify(Object.fromEntries(form.entries())) }); adminState.message = 'Compte créé avec succès.'; adminState.messageType = 'success'; await loadAdminDashboard(1); } catch (error) { adminMessage(error.message, 'error'); } });
+    const syncBulkUserControls = () => {
+      const checkboxes = [...els.adminHost.querySelectorAll('[data-user-select]:not(:disabled)')];
+      const selected = checkboxes.filter(input => input.checked).length;
+      const selectAll = $('adminSelectAllUsers'), deleteButton = $('adminDeleteSelected');
+      if (selectAll) { selectAll.checked = Boolean(checkboxes.length && selected === checkboxes.length); selectAll.indeterminate = selected > 0 && selected < checkboxes.length; }
+      if (deleteButton) { deleteButton.disabled = selected === 0; deleteButton.textContent = `Supprimer la sélection (${selected})`; }
+    };
+    els.adminHost.querySelectorAll('[data-user-select]').forEach(input => input.addEventListener('change', () => { if (input.checked) selectedAdminUsers.add(input.value); else selectedAdminUsers.delete(input.value); syncBulkUserControls(); }));
+    $('adminSelectAllUsers')?.addEventListener('change', event => {
+      els.adminHost.querySelectorAll('[data-user-select]:not(:disabled)').forEach(input => { input.checked = event.currentTarget.checked; if (input.checked) selectedAdminUsers.add(input.value); else selectedAdminUsers.delete(input.value); });
+      syncBulkUserControls();
+    });
+    $('adminDeleteSelected')?.addEventListener('click', async () => { try { await deleteAdminUsers([...selectedAdminUsers]); } catch (error) { adminMessage(error.message, 'error'); } });
+    syncBulkUserControls();
     const filterAccessPanel = panel => {
       const entity = panel.querySelector('[data-access-filter="entity"]')?.value || '';
       const owner = panel.querySelector('[data-access-filter="owner"]')?.value || '';
@@ -314,6 +344,7 @@
     els.adminHost.querySelectorAll('[data-admin-action]').forEach(button => button.addEventListener('click', async () => {
       const card = button.closest('[data-admin-user]'), id = card?.dataset.adminUser, user = adminState.users.find(u => u.id === id); if (!user) return;
       try {
+        if (button.dataset.adminAction === 'delete') { await deleteAdminUsers([id]); return; }
         if (button.dataset.adminAction === 'save') await api('/api/admin/users', { method: 'PATCH', body: JSON.stringify({ id, displayName: card.querySelector('[data-field="displayName"]').value, role: card.querySelector('[data-field="role"]').value, entity: card.querySelector('[data-field="entity"]').value, actionAccess: [...card.querySelectorAll('[data-action-access]:checked')].map(input => input.value) }) });
         if (button.dataset.adminAction === 'password') { const password = prompt(`Nouveau mot de passe pour ${user.email} (10 caractères minimum) :`); if (!password) return; await api('/api/admin/users', { method: 'PATCH', body: JSON.stringify({ id, password }) }); }
         if (button.dataset.adminAction === 'sessions') { if (!confirm(`Déconnecter ${user.email} de tous les appareils ?`)) return; await api('/api/admin/users', { method: 'PATCH', body: JSON.stringify({ id, revokeSessions: true }) }); }

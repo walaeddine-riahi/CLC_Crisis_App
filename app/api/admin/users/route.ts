@@ -174,3 +174,38 @@ export async function PATCH(request: NextRequest) {
     return apiErrorResponse(error, "admin/users:PATCH");
   }
 }
+
+export async function DELETE(request: NextRequest) {
+  const admin = await requireAdmin();
+  if (!admin) return errorResponse("Accès administrateur requis.", 403);
+  const body = await request.json().catch(() => null) as { ids?: string[] } | null;
+  const ids = [...new Set(Array.isArray(body?.ids) ? body.ids.filter((id): id is string => typeof id === "string") : [])];
+  if (!ids.length || ids.length > 100 || ids.some((id) => !ObjectId.isValid(id))) {
+    return errorResponse("Sélection d’utilisateurs invalide.");
+  }
+  const targetIds = ids.map((id) => new ObjectId(id));
+  if (targetIds.some((id) => id.equals(admin._id))) {
+    return errorResponse("Vous ne pouvez pas supprimer votre propre compte administrateur.", 409);
+  }
+  try {
+    const db = await getDb();
+    const users = db.collection("users");
+    const targets = await users.find({ _id: { $in: targetIds } }, { projection: { email: 1, displayName: 1, role: 1, active: 1 } }).toArray();
+    if (targets.length !== targetIds.length) return errorResponse("Un ou plusieurs utilisateurs sont introuvables.", 404);
+    const removesActiveAdmin = targets.some((user) => user.role === "ADMIN" && user.active !== false);
+    if (removesActiveAdmin) {
+      const remainingAdmins = await users.countDocuments({ _id: { $nin: targetIds }, role: "ADMIN", active: true });
+      if (!remainingAdmins) return errorResponse("Le dernier administrateur actif ne peut pas être supprimé.", 409);
+    }
+    await Promise.all([
+      db.collection("sessions").deleteMany({ userId: { $in: targetIds } }),
+      db.collection("presence").deleteMany({ userId: { $in: targetIds } }),
+    ]);
+    const result = await users.deleteMany({ _id: { $in: targetIds } });
+    const deletedUsers = targets.map((user) => ({ id: user._id.toString(), email: user.email, displayName: user.displayName, role: user.role }));
+    await db.collection("auditLogs").insertOne({ eventType: "users_deleted", userId: admin._id, details: { count: result.deletedCount, users: deletedUsers }, at: new Date() });
+    return NextResponse.json({ ok: true, deletedCount: result.deletedCount });
+  } catch (error) {
+    return apiErrorResponse(error, "admin/users:DELETE");
+  }
+}
