@@ -1043,7 +1043,7 @@ window.INITIAL_SNAPSHOT = {"meta": {"version": "V1.4 Multi-entités", "source": 
   const V14_STORAGE_KEY = 'delice_site_soliman_v1_4_state';
   const LEGACY_STORAGE_KEY = 'delice_site_soliman_v1_3_state';
   const OLDER_STORAGE_KEY = 'delice_site_soliman_v1_2_state';
-  const HORIZONS = ['Maintenant', '+6 h', '+12 h', '+24 h', '+48 h', '+72 h', '+96 h', '+120 h'];
+  const HORIZONS = ['Maintenant', '+6 h', '+12 h', '+24 h', '+48 h', '+72 h', '+96 h', '+120 h', '+7 j', '+10 j', '+15 j', '+21 j', '+30 j'];
   const SCENARIOS = ['Central', 'Défavorable', 'Extrême plausible'];
   const UPSTREAM = ['Grombalia', 'Bou Argoub', 'Menzel Bouzelfa', 'Beni Khalled'];
   const WEATHER_REFRESH_MS = 15*60*1000;
@@ -1065,6 +1065,8 @@ window.INITIAL_SNAPSHOT = {"meta": {"version": "V1.4 Multi-entités", "source": 
   };
   const ENSEMBLE_MODELS='ecmwf_ifs025,ncep_gefs025,icon_seamless';
   const MULTI_HORIZONS=[24,48,72,96,120];
+  const EXTENDED_HORIZONS=[168,240,360,504,720];
+  const HORIZON_HOURS={'+24 h':24,'+48 h':48,'+72 h':72,'+96 h':96,'+120 h':120,'+7 j':168,'+10 j':240,'+15 j':360,'+21 j':504,'+30 j':720};
 
   const LEVEL_COLORS = { ND:'#94a3b8', M0:'#2f855a', M1:'#d69e2e', M2:'#dd6b20', M3:'#c53030' };
   const LEVEL_LABELS = { ND:'Données insuffisantes', M0:'Normal', M1:'Vigilance', M2:'Alerte', M3:'Critique' };
@@ -1384,6 +1386,12 @@ window.INITIAL_SNAPSHOT = {"meta": {"version": "V1.4 Multi-entités", "source": 
   }
   function multiZoneProjection(zone,H=24,kind='central'){
     if(!multiWeatherFresh())return {available:false,score:null,level:'ND',scenario:'—',rain:null,max6:null,models:0};
+    if(H>120){
+      const x=state.multiWeather?.extended?.points?.[zone]?.[H],rain=x?.[kind];
+      if(!x||!Number.isFinite(rain))return {available:false,score:null,level:'ND',scenario:'—',rain:null,max6:null,models:0,source:'tendance étendue indisponible'};
+      const sc=scenarioFromRain(rain,H,safeNum(x.max6,0)),score=scenarioScoreLocal(sc);
+      return {available:true,score,level:levelFromScore(score),scenario:sc,rain,max6:safeNum(x.max6,0),models:1,quality:H<=240?'modérée':'faible',source:'tendance étendue NOAA GEFS — moyenne d’ensemble'};
+    }
     const ok=Object.values(state.multiWeather?.models||{}).filter(m=>m?.status==='ok');
     const vals=ok.map(m=>m.points?.[zone]?.[H]?.rain).filter(Number.isFinite);
     const six=ok.map(m=>m.points?.[zone]?.[H]?.max6).filter(Number.isFinite);
@@ -1647,7 +1655,7 @@ window.INITIAL_SNAPSHOT = {"meta": {"version": "V1.4 Multi-entités", "source": 
       const score=weatherWindowScore(safeNum(pt.precip12h,0),safeNum(pt.maxProb12h,0),safeNum(pt.maxGust12h,0));
       return {score,level:levelFromScore(score),scenario:scenarioFromScoreLocal(score),quality:currentConfidence(),source:'météo automatique H+0–12'};
     }
-    const H=h==='+120 h'?120:h==='+96 h'?96:h==='+72 h'?72:h==='+48 h'?48:24;return multiZoneProjection(zone,H,kind);
+    const H=HORIZON_HOURS[h]||24;return multiZoneProjection(zone,H,kind);
   }
   function styleMapZone(el,z){
     const r=mapRisk(z,mapHorizon,mapScenario),active=z===selectedZone;
@@ -1809,6 +1817,30 @@ window.INITIAL_SNAPSHOT = {"meta": {"version": "V1.4 Multi-entités", "source": 
     const entries=await Promise.all(Object.entries(ENSEMBLE_FAMILIES).map(async([k,d])=>{try{return [k,await fetchEnsembleFamilyPoint(name,k,d)]}catch(e){return [k,{key:k,label:d.label,status:'error',error:String(e.message||e)}]}}));
     const families=Object.fromEntries(entries),ok=Object.values(families).filter(f=>f.status==='ok');return {name,status:ok.length?'ok':'error',families};
   }
+  function parseExtendedMeanPayload(j){
+    const h=j?.hourly||{},times=h.time||[],prec=h.precipitation||[],spread=h.precipitation_spread||[],now=Date.now();
+    const rows=times.map((t,i)=>({t:new Date(t).getTime(),p:safeNum(prec[i],0),s:Math.max(0,safeNum(spread[i],0))})).filter(x=>Number.isFinite(x.t)&&x.t>=now-3600000),out={};
+    EXTENDED_HORIZONS.forEach(H=>{
+      const a=rows.filter(x=>x.t<=now+H*3600000),central=a.reduce((sum,x)=>sum+x.p,0),sigma=Math.sqrt(a.reduce((sum,x)=>sum+x.s*x.s,0));
+      out[H]={central,adverse:central+1.28*sigma,extreme:central+1.645*sigma,spread:sigma,max6:rollingMaxSum(a.map(x=>x.p),6)};
+    });
+    return out;
+  }
+  async function fetchExtendedMean(){
+    const names=MULTI_WEATHER_POINTS,lats=names.map(n=>WEATHER_POINTS[n].lat).join(','),lons=names.map(n=>WEATHER_POINTS[n].lon).join(',');
+    const params=new URLSearchParams({latitude:lats,longitude:lons,timezone:'Africa/Tunis',forecast_days:'30',hourly:'precipitation,precipitation_spread',models:'ncep_gefs_ensemble_mean_seamless'});
+    const res=await fetch('https://ensemble-api.open-meteo.com/v1/ensemble?'+params.toString(),{cache:'no-store'});if(!res.ok)throw new Error(`GEFS étendu : HTTP ${res.status}`);let data=await res.json();if(!Array.isArray(data))data=[data];
+    const points={};names.forEach((name,i)=>{if(data[i])points[name]=parseExtendedMeanPayload(data[i]);});
+    return {status:Object.keys(points).length?'ok':'error',model:'NOAA GEFS ensemble mean',source:'Open-Meteo Ensemble Mean API',updated:nowIso(),points};
+  }
+  function mergeExtendedHorizons(summary,extended){
+    if(!summary||extended?.status!=='ok')return summary;
+    EXTENDED_HORIZONS.forEach(H=>{
+      const rows=Object.values(extended.points||{}).map(p=>p?.[H]).filter(Boolean),central=rows.length?Math.max(...rows.map(x=>safeNum(x.central,0))):null,adverse=rows.length?Math.max(...rows.map(x=>safeNum(x.adverse,0))):null,extreme=rows.length?Math.max(...rows.map(x=>safeNum(x.extreme,0))):null,max6=rows.length?Math.max(...rows.map(x=>safeNum(x.max6,0))):null;
+      summary.horizons[H]={central,adverse,extreme,max6,centralScenario:scenarioFromRain(central,H,max6||0),adverseScenario:scenarioFromRain(adverse,H,max6||0),extremeScenario:scenarioFromRain(extreme,H,max6||0),available:rows.length>0,extended:true};
+    });
+    return summary;
+  }
   function scenarioFromRain(mm,hours,max6=0){
     if(mm===null||!Number.isFinite(mm))return '—';const f=Math.sqrt(Math.max(24,hours)/72),t=[15,35,60,100].map(x=>x*f);if(max6>=40||mm>=t[3])return'S4';if(max6>=25||mm>=t[2])return'S3';if(max6>=12||mm>=t[1])return'S2';if(max6>=3||mm>=t[0])return'S1';return'S0';
   }
@@ -1836,10 +1868,11 @@ window.INITIAL_SNAPSHOT = {"meta": {"version": "V1.4 Multi-entités", "source": 
   }
   async function refreshMultiWeather(silent=false){
     const pill=document.getElementById('multiWeatherPill');if(pill){pill.textContent='Multi-modèles : actualisation…';pill.className='fresh-pill warn';}
+    const extendedPromise=fetchExtendedMean().catch(e=>({status:'error',error:String(e.message||e),points:{}}));
     const models={},modelResults=await Promise.all(Object.keys(MODEL_SOURCES).map(async k=>{try{return await fetchDeterministicModel(k)}catch(e){return {key:k,label:MODEL_SOURCES[k].label,status:'error',error:String(e.message||e)}}}));modelResults.forEach(m=>models[m.key]=m);
     const ensemble={},ensResults=await Promise.all(MULTI_WEATHER_POINTS.map(async n=>{try{return [n,await fetchEnsemblePoint(n)]}catch(e){return [n,{name:n,status:'error',families:{},error:String(e.message||e)}]}}));ensResults.forEach(([n,v])=>ensemble[n]=v);
-    const oldHist=state.multiWeather?.history||[],summary=computeMultiSummary(models,ensemble,oldHist),instantané={time:nowIso(),central72:summary.horizons?.[72]?.central,adverse72:summary.horizons?.[72]?.adverse,confidence:summary.confidence};let history=oldHist.slice(-11),last=history.at(-1);if(summary.available&&(!last||minutesSince(last.time)>=240))history.push(instantané);
-    state.multiWeather={...(state.multiWeather||{}),status:summary.available?'ok':'error',updated:nowIso(),models,ensemble,summary,history,inm:normalizeInmRecord(state.multiWeather?.inm)};persist();if(!silent)addJournal('Alerte précoce',`Multi-modèles actualisés : ${summary.signal}, convergence ${summary.convergence??'ND'}, confiance ${summary.confidence??'ND'}.`);renderMultiWeather();renderDG();renderCockpit();renderScenarios();renderEntities();renderMap();
+    const extended=await extendedPromise,oldHist=state.multiWeather?.history||[],summary=mergeExtendedHorizons(computeMultiSummary(models,ensemble,oldHist),extended),instantané={time:nowIso(),central72:summary.horizons?.[72]?.central,adverse72:summary.horizons?.[72]?.adverse,confidence:summary.confidence};let history=oldHist.slice(-11),last=history.at(-1);if(summary.available&&(!last||minutesSince(last.time)>=240))history.push(instantané);
+    state.multiWeather={...(state.multiWeather||{}),status:summary.available?'ok':'error',updated:nowIso(),models,ensemble,extended,summary,history,inm:normalizeInmRecord(state.multiWeather?.inm)};persist();if(!silent)addJournal('Alerte précoce',`Multi-modèles actualisés : ${summary.signal}, convergence ${summary.convergence??'ND'}, confiance ${summary.confidence??'ND'}. Horizon étendu : ${extended.status==='ok'?'J+30 disponible':'indisponible'}.`);renderMultiWeather();renderDG();renderCockpit();renderScenarios();renderEntities();renderMap();
   }
   function multiFreshness(){return freshnessBadge(state.multiWeather?.updated,'Multi-modèles');}
   function renderMultiWeather(){
@@ -2409,7 +2442,12 @@ Prochaine revue : ${state.crisis?.nextReview||'À définir'}`;
     {h:'H+48',sc:h[48]?.centralScenario||'—',n:Number.isFinite(h[48]?.central)?`${h[48].central.toFixed(1)} mm`:'—'},
     {h:'H+72',sc:h[72]?.centralScenario||'—',n:Number.isFinite(h[72]?.central)?`${h[72].central.toFixed(1)} mm`:'—'},
     {h:'H+96',sc:h[96]?.centralScenario||'—',n:Number.isFinite(h[96]?.central)?`${h[96].central.toFixed(1)} mm`:'—'},
-    {h:'H+120',sc:h[120]?.centralScenario||'—',n:Number.isFinite(h[120]?.central)?`${h[120].central.toFixed(1)} mm`:'—'}
+    {h:'H+120',sc:h[120]?.centralScenario||'—',n:Number.isFinite(h[120]?.central)?`${h[120].central.toFixed(1)} mm`:'—'},
+    {h:'J+7',sc:h[168]?.centralScenario||'—',n:Number.isFinite(h[168]?.central)?`${h[168].central.toFixed(1)} mm`:'—'},
+    {h:'J+10',sc:h[240]?.centralScenario||'—',n:Number.isFinite(h[240]?.central)?`${h[240].central.toFixed(1)} mm`:'—'},
+    {h:'J+15',sc:h[360]?.centralScenario||'—',n:Number.isFinite(h[360]?.central)?`${h[360].central.toFixed(1)} mm`:'—'},
+    {h:'J+21',sc:h[504]?.centralScenario||'—',n:Number.isFinite(h[504]?.central)?`${h[504].central.toFixed(1)} mm`:'—'},
+    {h:'J+30',sc:h[720]?.centralScenario||'—',n:Number.isFinite(h[720]?.central)?`${h[720].central.toFixed(1)} mm`:'—'}
   ];}
   function v18RainLabel(name){const pt=state.autoWeather?.points?.[name];return pt&&autoWeatherFresh()?`${safeNum(pt.precip24h,0).toFixed(1)} mm / 24 h`:'ND';}
   function v18SiteStatus(site){return state.siteSituation?.[site]?.status||'Non vérifié';}
@@ -2490,9 +2528,9 @@ Prochaine revue : ${state.crisis?.nextReview||'À définir'}`;
       <div class="v17-form"><label>Statut officiel<input value="${v17Esc(inmRecord.status)}" disabled></label><label>Phénomène(s)<input value="${v17Esc(inmRecord.phenomena.join(', ')||'À confirmer')}" disabled></label><label>Zone surveillée<input value="${v17Esc(inmRecord.zones.join(', ')||'Nabeul')}" disabled></label><label>Référence bulletin<input value="${v17Esc(inmRecord.bulletinRef||'À récupérer')}" disabled></label><label>Diffusion<input value="${v17Esc(inmDateLabel(inmRecord.validFrom))}" disabled></label><label>Fin de validité<input value="${v17Esc(inmDateLabel(inmRecord.validUntil))}" disabled></label><label>Dernière vérification<input value="${v17Esc(inmDateLabel(inmRecord.checkedAt))}" disabled></label><label>État de la collecte<input value="${v17Esc(inmRecord.fetchStatus==='loading'?'Actualisation en cours':inmRecord.fetchStatus==='error'?'Source indisponible':'À jour')}" disabled></label><label class="full">Résumé officiel<textarea rows="2" disabled>${v17Esc(inmRecord.note||'Résumé en attente de collecte.')}</textarea></label></div>
       <div class="v18-inm-note">La dernière donnée officielle est conservée si la source est momentanément indisponible, mais elle cesse d’influencer la posture dès l’expiration du bulletin. ${inmRecord.fetchError?`Erreur de collecte : ${v17Esc(inmRecord.fetchError)}`:'Aucune saisie manuelle n’est requise.'}</div><div class="v17-actions" style="margin-top:10px"><button class="v17-btn primary" id="v18RefreshInm" ${v17CanUpdateWeather()?'':'disabled'}>Actualiser maintenant depuis l’INM</button></div>
     </div>
-    <div class="v18-section v18-map-card"><div class="v18-map-head"><div><h3>Carte territoriale — évolution de la criticité</h3><p>Soliman, amont prioritaire et Borj Cedria / CF. La couleur de chaque zone évolue selon l’horizon sélectionné.</p></div></div><div class="v182-map-toolbar"><label>Horizon <select id="v182Horizon">${HORIZONS.map(h=>`<option>${h}</option>`).join('')}</select></label><label>Scénario <select id="v182Scenario">${SCENARIOS.map(s=>`<option>${s}</option>`).join('')}</select></label></div><div class="v182-exec-strip"><span class="v182-exec-pill">Horizon : <b>${v17Esc(v182Horizon)}</b></span><span class="v182-exec-pill">Scénario : <b>${v17Esc(v182Scenario)}</b></span><span class="v182-exec-pill">Projection : <b>jusqu’à 5 jours</b></span></div><div class="v182-map-shell" id="v182RealMapHost"></div><div class="v18-legend"><span><i style="background:#2f855a"></i>Vert — normal / faible</span><span><i style="background:#d69e2e"></i>Jaune — vigilance</span><span><i style="background:#dd6b20"></i>Orange — alerte</span><span><i style="background:#c53030"></i>Rouge — critique</span></div><div id="v182ZoneCards" class="v182-map-summary"></div><div class="v182-map-note">Maintenant, H+6 et H+12 : météo automatique et terrain disponible. H+24 à H+120 : projection multi-modèles. Les couleurs indiquent une criticité opérationnelle ; elles ne représentent pas une probabilité d’inondation. À H+96/H+120, la carte sert à l’anticipation et ne déclenche pas seule le PCA.</div></div>
+    <div class="v18-section v18-map-card"><div class="v18-map-head"><div><h3>Carte territoriale — évolution de la criticité</h3><p>Soliman, amont prioritaire et Borj Cedria / CF. La couleur de chaque zone évolue selon l’horizon sélectionné.</p></div></div><div class="v182-map-toolbar"><label>Horizon <select id="v182Horizon">${HORIZONS.map(h=>`<option>${h}</option>`).join('')}</select></label><label>Scénario <select id="v182Scenario">${SCENARIOS.map(s=>`<option>${s}</option>`).join('')}</select></label></div><div class="v182-exec-strip"><span class="v182-exec-pill">Horizon : <b>${v17Esc(v182Horizon)}</b></span><span class="v182-exec-pill">Scénario : <b>${v17Esc(v182Scenario)}</b></span><span class="v182-exec-pill">Projection : <b>jusqu’à 30 jours</b></span></div><div class="v182-map-shell" id="v182RealMapHost"></div><div class="v18-legend"><span><i style="background:#2f855a"></i>Vert — normal / faible</span><span><i style="background:#d69e2e"></i>Jaune — vigilance</span><span><i style="background:#dd6b20"></i>Orange — alerte</span><span><i style="background:#c53030"></i>Rouge — critique</span></div><div id="v182ZoneCards" class="v182-map-summary"></div><div class="v182-map-note">Maintenant, H+6 et H+12 : météo automatique et terrain disponible. H+24 à H+120 : projection multi-modèles opérationnelle. J+7 à J+30 : tendance NOAA GEFS issue d’une moyenne d’ensemble, avec incertitude croissante. Les horizons étendus servent à l’anticipation et ne déclenchent jamais seuls le PCA.</div></div>
     <div class="v18-map-grid v18-section"><aside class="v18-side"><h3>Situation hydro terrain</h3><p>Mise à jour manuelle par les cellules locales.</p><div class="v18-side-grid">${v18HydroRows()}</div><div class="v18-hydro-form"><label>Point à actualiser<select id="v18HydroPoint">${Object.keys(V18_HYDRO_POINTS).map(x=>`<option>${v17Esc(x)}</option>`).join('')}</select></label><div class="v18-row"><label>État<select id="v18HydroStatus"><option>Non vérifié</option><option>Normal</option><option>À surveiller</option><option>Dégradé</option><option>Critique</option></select></label><label>Tendance<select id="v18HydroTrend"><option>Stable</option><option>Hausse</option><option>Baisse</option></select></label></div><label>Observation<textarea id="v18HydroNote" rows="2" placeholder="Niveau, refoulement, accès, débit, photo constatée…"></textarea></label><button class="v17-btn" id="v18SaveHydro" ${v17CanUpdateWeather()?'':'disabled'}>Enregistrer l’observation</button></div></aside><div class="v18-panel" style="padding:14px"><h3>Zones suivies</h3><p>Lecture ciblée : Soliman + amont prioritaire + Borj Cedria / CF.</p><div class="v18-side-grid">${V182_TRACKED_ZONES.map(z=>{const r=mapRisk(z,'Maintenant','Central'),pt=state.autoWeather?.points?.[z];return `<div class="v18-hydro-row"><div class="top"><b>${v17Esc(z)}</b><span class="v18-badge" style="background:${(LEVEL_COLORS[r.level]||LEVEL_COLORS.ND)}18;color:${LEVEL_COLORS[r.level]||LEVEL_COLORS.ND}">${v182LevelLabel(r.level)}</span></div><small>${pt&&autoWeatherFresh()?`${safeNum(pt.precip6h,0).toFixed(1)} mm / 6 h • ${safeNum(pt.precip24h,0).toFixed(1)} mm / 24 h`:'Météo à actualiser'}</small></div>`}).join('')}</div></div></div>
-    <div class="v18-section v18-panel"><h3>Projection sur 5 jours</h3><p>Scénario central par horizon. Les scénarios défavorable et extrême plausible restent disponibles dans l’analyse détaillée.</p><div class="v18-timeline">${tl.map(x=>`<div class="v18-time"><div class="h">${x.h}</div><div class="s">${v17Esc(x.sc)}</div><div class="n">${v17Esc(v17ScenarioLabel(x.sc))}<br>${v17Esc(x.n)}</div></div>`).join('')}</div></div>
+    <div class="v18-section v18-panel"><h3>Projection jusqu’à 30 jours</h3><p>Scénario central par horizon. De J+7 à J+30, les résultats constituent une tendance d’anticipation et non une prévision locale précise.</p><div class="v18-timeline">${tl.map(x=>`<div class="v18-time"><div class="h">${x.h}</div><div class="s">${v17Esc(x.sc)}</div><div class="n">${v17Esc(v17ScenarioLabel(x.sc))}<br>${v17Esc(x.n)}</div></div>`).join('')}</div></div>
     <div class="v18-section v18-panel"><h3>Lecture opérationnelle</h3><div class="v18-op">${v18OperationalReading()}</div></div>
     <div class="v18-section v18-panel"><details><summary style="cursor:pointer;font-weight:900;color:#123f80">Analyse multi-modèles détaillée</summary><p>Comparaison des familles déterministes et ensembles. Ces valeurs éclairent la décision ; elles ne déclenchent jamais seules une activation du PCA.</p><div class="v18-model-summary">${v18ModelCards()}</div><div style="margin-top:10px" class="v18-muted">Fenêtre potentielle : ${v17Esc(mw.eventWindow?.label||'à confirmer')} • Tendance cycles : ${v17Esc(mw.trend||'historique insuffisant')}.</div></details></div>`;
     const mh=document.getElementById('v182Horizon'),ms=document.getElementById('v182Scenario');if(mh){mh.value=v182Horizon;mh.addEventListener('change',()=>{v182Horizon=mh.value;v182RenderDynamicMap();});}if(ms){ms.value=v182Scenario;ms.addEventListener('change',()=>{v182Scenario=ms.value;v182RenderDynamicMap();});}setTimeout(v182RenderDynamicMap,0);
