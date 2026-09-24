@@ -108,6 +108,7 @@
 
 /* V1.8.6 finale — carte exécutive et textes harmonisés */
 .v182-map-shell{background:#f5f8fb}
+.v18-hydro-row-actions{display:flex;align-items:center;justify-content:flex-end;gap:6px;flex-wrap:wrap}
 .v182-real-map{min-height:500px}
 .v182-label-box{fill:rgba(255,255,255,.96);stroke:#d8e2ec;stroke-width:.8}
 .v182-map-label{font-size:8px;font-weight:800;fill:#143d70;letter-spacing:0}
@@ -2474,7 +2475,7 @@ Prochaine revue : ${state.crisis?.nextReview||'À définir'}`;
     cards?.querySelectorAll('[data-v182-zone]').forEach(el=>el.addEventListener('click',()=>{selectedZone=el.dataset.v182Zone;v182RenderDynamicMap();}));
   }
   function v18OperationalReading(){const r=v17Recommendation(),hy=v18HydroSummary(),sol=operationalRisk('Soliman'),up=upstreamOperationalMax();let hydro='Situation hydro non vérifiée';if(hy.critical)hydro=`${hy.critical} point(s) hydro critique(s)`;else if(hy.alert)hydro=`${hy.alert} point(s) hydro dégradé(s)`;else if(Object.values(state.hydro||{}).some(x=>x.status==='Normal'))hydro='Aucun signal hydro dégradé confirmé';const short=weatherSignal(state.autoWeather?.points?.Soliman);return `<strong>${v17Esc(r.level)}</strong> — ${v17Esc(r.decision)}<br><span class="v18-muted">Court terme : ${v17Esc(short.code)} • Hydro : ${v17Esc(hydro)} • Amont : ${v17Esc(up.zone||'à confirmer')}${Number.isFinite(up.score)?` ${Math.round(up.score)}/100`:''} • INM : ${v17Esc(effectiveInmStatus())}.</span>`;}
-  function v18HydroRows(){return Object.entries(V18_HYDRO_POINTS).map(([n,p])=>{const d=state.hydro?.[n]||{},age=d.updated?minutesSince(d.updated):null,c=v18HydroColor(d.status);return `<div class="v18-hydro-row"><div class="top"><b>${v17Esc(n)}</b><span class="v18-badge" style="background:${c}18;color:${c}">${v17Esc(d.status||'Non vérifié')}</span></div><small>${v17Esc(p.kind)} • ${d.updated?(age<1?'à l’instant':`${Math.round(age)} min`):'non actualisé'}${d.trend?` • tendance ${v17Esc(d.trend.toLowerCase())}`:''}${d.note?`<br>${v17Esc(d.note)}`:''}</small></div>`}).join('');}
+  function v18HydroRows(){return Object.entries(V18_HYDRO_POINTS).map(([n,p])=>{const d=state.hydro?.[n]||{},age=d.updated?minutesSince(d.updated):null,c=v18HydroColor(d.status),hasObservation=Boolean(d.updated||d.note||(d.status&&d.status!=='Non vérifié')||(d.trend&&d.trend!=='Stable'));return `<div class="v18-hydro-row"><div class="top"><b>${v17Esc(n)}</b><div class="v18-hydro-row-actions"><span class="v18-badge" style="background:${c}18;color:${c}">${v17Esc(d.status||'Non vérifié')}</span>${hasObservation&&v17CanUpdateWeather()?`<button type="button" class="v17-mini danger" data-v18-delete-hydro="${v17Esc(n)}">Supprimer</button>`:''}</div></div><small>${v17Esc(p.kind)} • ${d.updated?(age<1?'à l’instant':`${Math.round(age)} min`):'non actualisé'}${d.trend?` • tendance ${v17Esc(d.trend.toLowerCase())}`:''}${d.note?`<br>${v17Esc(d.note)}`:''}</small></div>`}).join('');}
   function v18ModelCards(){return Object.keys(MODEL_SOURCES).map(k=>{const m=state.multiWeather?.models?.[k],src=MODEL_SOURCES[k],h=m?.basin?.[72]||{};return `<div class="v18-model"><b>${v17Esc(src.label)}</b><span>H+72 : ${m?.status==='ok'?`${safeNum(h.rain,0).toFixed(1)} mm`:'indisponible'}</span><span>Max 6 h : ${m?.status==='ok'?`${safeNum(h.max6,0).toFixed(1)} mm`:'—'}</span></div>`}).join('');}
   function v18RenderMeteoHydro(){
     const el=document.getElementById('v17-meteo');if(!el)return;const mw=state.multiWeather?.summary||{},hy=v18HydroSummary(),tl=v18TimelineData(),inmRecord=normalizeInmRecord(state.multiWeather?.inm),inmState=inmValidity(inmRecord),inm=inmState.status,conf=Number.isFinite(mw.confidence)?`${Math.round(mw.confidence)}/100`:'ND',conv=Number.isFinite(mw.convergence)?`${Math.round(mw.convergence)} %`:'ND';
@@ -2496,6 +2497,7 @@ Prochaine revue : ${state.crisis?.nextReview||'À définir'}`;
     const sel=document.getElementById('v18HydroPoint'),status=document.getElementById('v18HydroStatus'),trend=document.getElementById('v18HydroTrend'),note=document.getElementById('v18HydroNote');
     const load=()=>{const d=state.hydro?.[sel.value]||{};status.value=d.status||'Non vérifié';trend.value=d.trend||'Stable';note.value=d.note||'';};sel?.addEventListener('change',load);load();
     document.getElementById('v18SaveHydro')?.addEventListener('click',()=>{const k=sel.value;state.hydro[k]={status:status.value,trend:trend.value,updated:nowIso(),note:note.value.trim()};persist();addJournal('Information terrain',`${k} : ${status.value}${trend.value!=='Stable'?` • ${trend.value}`:''}${note.value.trim()?` — ${note.value.trim()}`:''}`);v17Render();});
+    el.querySelectorAll('[data-v18-delete-hydro]').forEach(button=>button.addEventListener('click',()=>{const k=button.dataset.v18DeleteHydro;if(!k||!state.hydro?.[k]||!confirm(`Supprimer l’observation hydro / terrain « ${k} » ?`))return;state.hydro[k]={status:'Non vérifié',trend:'Stable',updated:null,note:''};addJournal('Information terrain',`${k} : observation hydro / terrain supprimée`);v17Render();toast(`Observation ${k} supprimée.`);}));
   }
   function v17RenderDecision(){
     const el=document.getElementById('v17-decision');if(!el)return;const r=v17Recommendation(),c=state.crisis,can=v17CanDecide();
@@ -2804,7 +2806,7 @@ Prochaine revue : ${state.crisis?.nextReview||'À définir'}`;
 })();
 </script>
 
-<script src="/mongo-collab.js?v=4.4.0"></script>
+<script src="/mongo-collab.js?v=4.5.0"></script>
 
 </body>
 </html>

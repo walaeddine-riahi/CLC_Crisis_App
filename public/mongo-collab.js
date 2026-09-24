@@ -197,7 +197,7 @@
     ready = false; setStatus('syncing', 'Connexion à MongoDB…'); await bootstrap();
     ready = true; els.overlay.classList.add('hidden'); setStatus('online', 'Synchronisé avec la base centrale MongoDB.');
     app.setPersistHook(scheduleSync);
-    clearInterval(pollTimer); clearInterval(presenceTimer); pollTimer = setInterval(pollRemote, 4000); presenceTimer = setInterval(heartbeat, 15000);
+    clearInterval(pollTimer); clearInterval(presenceTimer); pollTimer = setInterval(pollRemote, 60000); presenceTimer = setInterval(heartbeat, 15000);
     await heartbeat(); scheduleSync();
   }
   async function stop() {
