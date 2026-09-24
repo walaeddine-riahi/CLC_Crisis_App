@@ -2267,12 +2267,14 @@ Décisions / validations : ${dgDecisionItems().map(x=>x.title).join(' | ')}`;
       ['Terrain',tf.text||'À confirmer']
     ];
   }
-  function v20CriticalActions(){
-    const rows=v17ActionRows().filter(a=>['Avant','Pendant'].includes(a.macroPhase)&&a.status!=='Fait'&&a.status!=='N/A');
-    return rows.sort((a,b)=>{
-      const p=x=>x.status==='Bloqué'?0:x.priority==='Critique'?1:x.priority==='Haute'?2:3;
-      return p(a)-p(b);
-    }).slice(0,6);
+  function v20MeetingActions(){
+    const rows=v17ActionRows().filter(a=>['Avant','Pendant'].includes(a.macroPhase));
+    const priority=x=>x.priority==='Critique'?0:x.priority==='Haute'?1:2;
+    const sortByPriority=(a,b)=>priority(a)-priority(b);
+    return {
+      inProgress:rows.filter(a=>a.status==='En cours').sort(sortByPriority),
+      completed:rows.filter(a=>a.status==='Fait').sort(sortByPriority)
+    };
   }
   function v20PushNotification(key,severity,title,textMsg,target='Cellule de crise'){
     state.v20=state.v20||{};state.v20.notifications=state.v20.notifications||[];
@@ -2332,7 +2334,7 @@ Décisions / validations : ${dgDecisionItems().map(x=>x.title).join(' | ')}`;
   }
   function v20RenderMeeting(){
     const el=document.getElementById('v17-meeting');if(!el)return;
-    const r=v17Recommendation(),w=v20T0Window(),m=v20Margin(),tr=v20Trend(),p=derivePosture(),critical=v20CriticalActions(),next=state.crisis?.nextReview?new Date(state.crisis.nextReview).toLocaleString('fr-FR'):'À définir';
+    const r=v17Recommendation(),w=v20T0Window(),m=v20Margin(),tr=v20Trend(),p=derivePosture(),meetingActions=v20MeetingActions(),inProgress=meetingActions.inProgress,completed=meetingActions.completed,next=state.crisis?.nextReview?new Date(state.crisis.nextReview).toLocaleString('fr-FR'):'À définir';
     const sites=Object.entries(V17_SITES).map(([k,d])=>{const s=state.siteSituation?.[k]||{};return `<div class="v20-meeting-row"><b>${v17Esc(d.label)}</b> — ${v17Esc(s.status||'Non vérifié')} • accès ${v17Esc(s.access||'Non vérifié')}</div>`}).join('');
     el.innerHTML=`<div class="v17-head"><div><h2>Réunion de crise</h2><p>Vue projetable : situation, décision, marge et actions critiques.</p></div><div class="v17-actions"><button class="v17-btn" id="v20Fullscreen">Plein écran</button><button class="v17-btn" id="v20CopyBrief">Copier la synthèse</button></div></div>
     <div class="v20-meeting-board" id="v20MeetingBoard"><div class="v20-meeting-top"><div><h2>Groupe Délice — cellule de crise</h2><p>${new Date().toLocaleString('fr-FR')} • Site Soliman / Cap Bon</p></div><div><div class="v20-meeting-status">${v17Esc(r.level)}</div><p>${v17Esc(r.decision)}</p></div></div>
@@ -2343,19 +2345,20 @@ Décisions / validations : ${dgDecisionItems().map(x=>x.title).join(' | ')}`;
         <div class="v20-meeting-card"><span>Tendance</span><b>${tr.symbol} ${v17Esc(tr.label)}</b></div>
         <div class="v20-meeting-card"><span>Décision actuelle</span><b>${v17Esc(state.crisis?.decision||'À confirmer')}</b></div>
         <div class="v20-meeting-card"><span>PCA CLC</span><b>${v17Esc(state.crisis?.pcaCLC||'Non activé')}</b></div>
-        <div class="v20-meeting-card"><span>Actions critiques ouvertes</span><b>${critical.length}</b></div>
+        <div class="v20-meeting-card"><span>Actions en cours</span><b>${inProgress.length}</b></div>
+        <div class="v20-meeting-card"><span>Actions achevées</span><b>${completed.length}</b></div>
         <div class="v20-meeting-card"><span>Prochaine revue</span><b>${v17Esc(next)}</b></div>
       </div>
     </div>
     <div class="v20-meeting-columns">
-      <div class="v20-meeting-list"><h3>Actions à traiter maintenant</h3>${critical.map(a=>`<div class="v20-meeting-row"><b>${v17Esc(a.entity)} — ${v17Esc(a.object||a.action)}</b><br>${v17Esc(a.status)} • ${v17Esc(a.owner||'À affecter')} • ${v17Esc(a.deadline||'À définir')}</div>`).join('')||'<div class="v20-meeting-row">Aucune action critique ouverte.</div>'}</div>
+      <div class="v20-meeting-list"><h3>Actions à traiter maintenant — En cours</h3>${inProgress.slice(0,6).map(a=>`<div class="v20-meeting-row"><b>${v17Esc(a.entity)} — ${v17Esc(a.object||a.action)}</b><br>${v17Esc(a.status)} • ${v17Esc(a.owner||'À affecter')} • ${v17Esc(a.deadline||'À définir')}</div>`).join('')||'<div class="v20-meeting-row">Aucune action en cours.</div>'}<h3 style="margin-top:14px">Actions achevées</h3>${completed.slice(0,6).map(a=>`<div class="v20-meeting-row"><b>${v17Esc(a.entity)} — ${v17Esc(a.object||a.action)}</b><br>${v17Esc(a.status)} • ${v17Esc(a.owner||'À affecter')} • ${v17Esc(a.deadline||'À définir')}</div>`).join('')||'<div class="v20-meeting-row">Aucune action achevée.</div>'}</div>
       <div class="v20-meeting-list"><h3>Situation des sites</h3>${sites}</div>
     </div>`;
     document.getElementById('v20Fullscreen')?.addEventListener('click',async()=>{const b=document.getElementById('v20MeetingBoard');try{if(!document.fullscreenElement)await b.requestFullscreen();else await document.exitFullscreen();}catch(e){}});
     document.getElementById('v20CopyBrief')?.addEventListener('click',async()=>{const txt=v20MeetingText();try{await navigator.clipboard.writeText(txt);toast('Synthèse copiée.');}catch(e){prompt('Copier la synthèse :',txt);}});
   }
   function v20MeetingText(){
-    const r=v17Recommendation(),w=v20T0Window(),m=v20Margin(),tr=v20Trend(),p=derivePosture(),critical=v20CriticalActions();
+    const r=v17Recommendation(),w=v20T0Window(),m=v20Margin(),tr=v20Trend(),p=derivePosture(),meetingActions=v20MeetingActions();
     return `GROUPE DÉLICE — SYNTHÈSE CELLULE DE CRISE
 ${new Date().toLocaleString('fr-FR')}
 Niveau : ${r.level}
@@ -2366,7 +2369,8 @@ Posture CLC : ${p}
 Tendance : ${tr.label}
 Décision actuelle : ${state.crisis?.decision||'À confirmer'}
 PCA CLC : ${state.crisis?.pcaCLC||'Non activé'}
-Actions critiques ouvertes : ${critical.length}
+Actions en cours : ${meetingActions.inProgress.length}
+Actions achevées : ${meetingActions.completed.length}
 Prochaine revue : ${state.crisis?.nextReview||'À définir'}`;
   }
 
